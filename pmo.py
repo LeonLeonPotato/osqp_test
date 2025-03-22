@@ -39,8 +39,8 @@ def f(x, u, params, mod=torch):
     
 def jac(x, u, params):
     # convert to torch tensor if not already
-    x_nom_tensor = x_nom.clone() if isinstance(x, torch.Tensor) else torch.from_numpy(x)
-    u_nom_tensor = u_nom.clone() if isinstance(u, torch.Tensor) else torch.from_numpy(u)
+    x_nom_tensor = x.clone() if isinstance(x, torch.Tensor) else torch.from_numpy(x)
+    u_nom_tensor = u.clone() if isinstance(u, torch.Tensor) else torch.from_numpy(u)
 
     # enable gradient tracking
     x_nom_tensor = x_nom_tensor.detach().requires_grad_(True)
@@ -62,7 +62,7 @@ def jac(x, u, params):
         Ju.append(grad_u)
     Ju = torch.stack(Ju, dim=0).detach().numpy()
 
-    c = x_next.detach().numpy() - Jx @ x_nom - Ju @ u_nom
+    c = x_next.detach().numpy() - Jx @ np.array(x) - Ju @ np.array(u)
     return Jx, Ju, c
 
 
@@ -72,44 +72,56 @@ def alpha_beta(expected:np.ndarray,
                u_nom:List[Union[np.ndarray, torch.Tensor]]) -> Tuple[np.ndarray, np.ndarray]:
     N = expected.shape[0]
 
-    Jx = []; Ju = []; C = []
+    Jxs = []; Jus = []; Cs = []
 
-    simed_x = x_nom if isinstance(x_nom, torch.Tensor) else torch.from_numpy(x_nom)
-    for i in range(N):
-        Jx_i, Ju_i, c_i = jac(simed_x, u_nom[i], params)
-        Jx.append(Jx_i); Ju.append(Ju_i); C.append(c_i)
-        simed_x = f(simed_x, u_nom[i], params, torch).detach()
+    use_adaptive = True
 
-    n = Jx[0].shape[0]
-    m = Ju[0].shape[0]
+    if use_adaptive:
+        simed_x = x_nom if isinstance(x_nom, torch.Tensor) else torch.from_numpy(x_nom)
+        for i in range(N-1):
+            Jx_i, Ju_i, c_i = jac(simed_x, u_nom[i], params)
+            Jxs.append(Jx_i); Jus.append(Ju_i); Cs.append(c_i)
+            simed_x = f(simed_x, u_nom[i], params, torch).detach()
+            # print(simed_x.numpy())
+        while len(Jxs) < N:
+            Jxs.append(Jxs[-1]); Jus.append(Jus[-1]); Cs.append(Cs[-1])
+    else:
+        Jx_i, Ju_i, c_i = jac(x_nom, u_nom[0], params)
+        Jxs = [Jx_i for i in range(N)]; Jus = [Ju_i for i in range(N)]; Cs = [c_i for i in range(N)]
+
+    n = Jxs[0].shape[0]; m = Jus[0].shape[1]
 
     # compute stacked A matrix
-    A_block = [np.eye(n)]
+    A_block = [Jxs[0]]
     for i in range(N - 1):
-        A_block.append(A_block[-1] @ Jx[i])
+        A_block.append(Jxs[i] @ A_block[-1])
     A = np.concatenate(A_block, axis=0)
 
     # compute B matrix
-    B1 = [[np.zeros_like(Ju) for i in range(N)] for j in range(N)]
-    for i in range(N):
-        for j in range(i+1):
-            B1[i][j] = A_block[i - j] @ Ju
+    B1 = [[np.zeros((n, m)) for i in range(N)] for j in range(N)]
+    for j in range(N):
+        track = Jus[j]
+        B1[j][j] = track
+        for i in range(j+1, N):
+            track = Jxs[i] @ track
+            B1[i][j] = track
     B1 = np.block(B1)
 
-    C = [c]
+    B2C = [Cs[0]]
     for i in range(1, N):
-        C.append(C[-1] + (A_block[i] @ c))
-    C = np.concatenate(C, axis=0)
+        B2C.append(Jxs[i] @ B2C[-1] + Cs[i])
+    B2C = np.concatenate(B2C, axis=0)
 
     # print(A.shape, Jx.shape, x_nom.reshape(-1, 1).shape, C.reshape(-1, 1).shape, expected.flatten().reshape(-1, 1).shape)
 
-    alpha = A @ Jx @ x_nom.reshape(-1, 1) + C.reshape(-1, 1) - expected.flatten().reshape(-1, 1)
+    alpha = A @ x_nom.reshape(-1, 1) + B2C.reshape(-1, 1) - expected.flatten().reshape(-1, 1)
     beta = B1
     return alpha, beta
 
 def mpc(expected, params, x_nom, u_nom, Q, R, Qf, max_change=3, max_value=12):
     N = expected.shape[0]
-    alpha, beta = alpha_beta(expected, params, x_nom, u_nom)
+    n = x_nom.shape[0]; m = u_nom[0].shape[0]
+    alpha, beta = alpha_beta(expected, params, x_nom, u_nom[1:])
 
     # test_u = np.array([
     #     12.0, 0,
@@ -137,22 +149,22 @@ def mpc(expected, params, x_nom, u_nom, Q, R, Qf, max_change=3, max_value=12):
     P = sparse.csc_matrix(2 * (beta.T @ Q @ beta + R))
     q = 2 * beta.T @ Q @ alpha
 
-    eye = sparse.eye(N * u_nom.shape[0], format='csc')
+    eye = sparse.eye(N * m, format='csc')
     diff = -eye.copy()
     diff.setdiag(1, 2)
     A = sparse.vstack([
         eye, diff
     ], format='csc')
 
-    bl = np.full((N * u_nom.shape[0],), -max_value)
-    bl[0] = max(-max_value, u_nom[0] - max_change)
-    bl[1] = max(-max_value, u_nom[1] - max_change)
-    bl = np.concatenate([bl, np.full((N * u_nom.shape[0],), -max_change)])
+    bl = np.full((N * m,), -max_value)
+    bl[0] = max(-max_value, u_nom[0][0] - max_change)
+    bl[1] = max(-max_value, u_nom[0][1] - max_change)
+    bl = np.concatenate([bl, np.full((N * m,), -max_change)])
 
-    bu = np.full((N * u_nom.shape[0],), max_value)
-    bu[0] = min(max_value, u_nom[0] + max_change)
-    bu[1] = min(max_value, u_nom[1] + max_change)
-    bu = np.concatenate([bu, np.full((N * u_nom.shape[0],), max_change)])
+    bu = np.full((N * m,), max_value)
+    bu[0] = min(max_value, u_nom[0][0] + max_change)
+    bu[1] = min(max_value, u_nom[0][1] + max_change)
+    bu = np.concatenate([bu, np.full((N * m,), max_change)])
     
     prob.setup(P, q, 
                 A=A,
@@ -163,13 +175,13 @@ def mpc(expected, params, x_nom, u_nom, Q, R, Qf, max_change=3, max_value=12):
     return res.x
 
 if __name__ == "__main__":
+    N = 20
     x_nom = np.array([-50, 50, -np.pi/2, 0.0, 0.0])
-    u_nom = np.array([0.0, 0.0])
+    u_nom = [np.random.randn(2) for i in range(N)]
     Q = np.diag([1.0, 1.0, 0.0, 0.0, 0.0])
     R = np.eye(2) * 0.0001
     # Qf = np.diag([0.0, 0.0, 0.0, 0.0, 0.0])
     Qf = Q
-    N = 20
     expected = np.zeros((N, x_nom.shape[0]), dtype=np.float32)
     expected[:, :] = [50, 50, np.pi/2, 0, 0]
 
@@ -197,17 +209,18 @@ if __name__ == "__main__":
         u = mpc(expected, params, x_nom, u_nom, Q, R, Qf)
         params.dt = realdt
 
-        u_nom = np.array([u[0], u[1]])
+        u_nom = [np.array([u[i], u[i+1]]) for i in range(0, len(u), 2)]
+        output_u = u_nom[0].copy()
         # u_nom[0] = np.clip(u_nom[0], -12, 12); u_nom[1] = np.clip(u_nom[1], -12, 12)
-        x_nom = f(x_nom, u_nom, params, np)
+        x_nom = f(x_nom, output_u, params, np)
         # x_nom[2] += np.random.normal(0, 0.2)
 
-        print(f"ts {i+1}: {u[0]:.2f}, {u[1]:.2f} | {x_nom[0]:.2f}, {x_nom[1]:.2f}, {x_nom[2]:.2f}")
+        print(f"ts {i+1}: {output_u[0]:.2f}, {output_u[1]:.2f} | {x_nom[0]:.2f}, {x_nom[1]:.2f}, {x_nom[2]:.2f}")
         xy.append(tuple(x_nom[:2].round(2)))
         theta.append(x_nom[2].round(2))
 
         time += realdt
     print("P = " + str(xy))
-    print("T = " + str(theta))
-    print("O = " + str(targets))
+    # print("T = " + str(theta))
+    # print("O = " + str(targets))
     
