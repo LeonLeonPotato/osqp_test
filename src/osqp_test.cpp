@@ -10,11 +10,11 @@
 #include "osqp/osqp.h"
 
 void test() {
-    int N = 100;
+    int N = 40;
 
     long long start = pros::micros();
 
-    mpc::MPCParams params {{0.03, 30.54, 18.674, 0.1626}, 0.01, N};
+    mpc::PredictParams params {{0.03, 30.54, 18.674, 0.1626}, N};
     Eigen::VectorXf x_nom(5);
     x_nom << 1, -1, 2, 1, 1;
     Eigen::VectorXf u_nom(2);
@@ -22,7 +22,9 @@ void test() {
 
     std::vector<Eigen::VectorXf> desired_poses(N, x_nom.cast<float>());
 
-    auto ret = mpc::alpha_beta(desired_poses, x_nom, u_nom, params);
+    mpc::Vecf alpha;
+    mpc::Matf beta;
+    mpc::alpha_beta(desired_poses, x_nom, u_nom, params, alpha, beta);
     long long end = pros::micros();
 
     std::cout << "Time taken: " << end - start << " us" << std::endl;
