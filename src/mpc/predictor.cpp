@@ -1,5 +1,7 @@
 #include "predictor.h"
 #include "osqp/osqp.h"
+#include "utils.h"
+#include <vector>
 
 using namespace mpc;
 
@@ -9,9 +11,17 @@ std::vector<Vecf> mpc::predict(
     const Vecf& x_nom, const Vecf& u_nom, 
     const PredictParams& params)
 {
-    int N = std::min((int) desired_poses.size(), params.N);
-    Vecf alpha; Matf beta;
-    alpha_beta(desired_poses, x_nom, u_nom, params, alpha, beta);
+    // long long start = pros::micros();
+    // int N = std::min((int) desired_poses.size(), params.N);
+    // Vecf alpha; Matf beta; 
+    // Matf* betaTQ = new Matf();
+    // alpha_beta(desired_poses, x_nom, u_nom, params, alpha, beta, betaTQ);
 
-    OSQPCscMatrix* sparse_alpha = OSQPCscMatrix_new(5*N, n, A_nnz, A_x, A_i, A_p);
+    // Matf H = betaTQ->operator*(beta);
+    // Vecf q = betaTQ->operator*(alpha);
+    // long long end = pros::micros();
+    // std::cout << "Predictor took " << end - start << " us" << std::endl;
+    
+    std::vector<Vecf> predictions;
+    return predictions;
 }

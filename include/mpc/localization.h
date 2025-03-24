@@ -13,11 +13,11 @@ class Localization {
         virtual float vl() = 0;
         virtual float vr() = 0;
         Vecf get_state(void) {
-            return {x(), y(), theta(), vl(), vr()};
+            return Vecf(5);
         }
 };
 
-class SimulatedLocalizer : Localization {
+class SimulatedLocalizer : public Localization {
     private:
         pros::MutexVar<float> x_, y_, theta_, vl_, vr_;
         pros::task_t input_task;

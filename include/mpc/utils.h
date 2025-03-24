@@ -17,7 +17,7 @@ struct PredictParams {
     ModelParams model;
     int N = INT_MAX;
     Matf Q;
-    Vecf R;
+    Matf R;
 };
 
 struct MPCParams {
@@ -34,6 +34,12 @@ void alpha_beta(
     const Vecf& x_nom, const Vecf& u_nom, 
     const PredictParams& params,
     Vecf& alpha, Matf& beta, Matf* betaTQ = nullptr);
+
+void compute_penalties(
+    const std::vector<Vecf>& desired_poses, 
+    const Vecf& x_nom, const Vecf& u_nom, 
+    const PredictParams& params,
+    Matf& H, Vecf& q);
 
 // std::pair<Vecf, Eigen::MatrixXf> alpha_beta(
 //     const Vecf& desired_poses,
