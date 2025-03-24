@@ -3,6 +3,7 @@ import torch
 import osqp
 import numpy as np
 from scipy import sparse
+from scipy.interpolate import CubicSpline
 from typing import Tuple, Union, List
 
 import osqp.tests
@@ -68,8 +69,8 @@ def jac(x, u, params):
 
 def alpha_beta(expected:np.ndarray, 
                params:Params, 
-               x_nom:Union[np.ndarray, torch.Tensor], 
-               u_nom:List[Union[np.ndarray, torch.Tensor]]) -> Tuple[np.ndarray, np.ndarray]:
+               x_nom:np.ndarray, 
+               u_nom:List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
     N = expected.shape[0]
 
     Jxs = []; Jus = []; Cs = []
@@ -77,11 +78,11 @@ def alpha_beta(expected:np.ndarray,
     use_adaptive = True
 
     if use_adaptive:
-        simed_x = x_nom if isinstance(x_nom, torch.Tensor) else torch.from_numpy(x_nom)
-        for i in range(N-1):
+        simed_x = x_nom.copy()
+        for i in range(N//2):
             Jx_i, Ju_i, c_i = jac(simed_x, u_nom[i], params)
             Jxs.append(Jx_i); Jus.append(Ju_i); Cs.append(c_i)
-            simed_x = f(simed_x, u_nom[i], params, torch).detach()
+            simed_x = f(simed_x, u_nom[i], params, np)
             # print(simed_x.numpy())
         while len(Jxs) < N:
             Jxs.append(Jxs[-1]); Jus.append(Jus[-1]); Cs.append(Cs[-1])
@@ -93,24 +94,27 @@ def alpha_beta(expected:np.ndarray,
 
     # compute stacked A matrix
     A_block = [Jxs[0]]
-    for i in range(N - 1):
+    for i in range(1, N):
         A_block.append(Jxs[i] @ A_block[-1])
     A = np.concatenate(A_block, axis=0)
 
     # compute B matrix
     B1 = [[np.zeros((n, m)) for i in range(N)] for j in range(N)]
+    B2C = [[np.zeros((n, n)) for i in range(N)] for j in range(N)]
     for j in range(N):
         track = Jus[j]
+        track2 = np.eye(n)
         B1[j][j] = track
+        B2C[j][j] = track2
         for i in range(j+1, N):
             track = Jxs[i] @ track
             B1[i][j] = track
+            track2 = Jxs[i] @ track2
+            B2C[i][j] = track2
     B1 = np.block(B1)
+    B2C = np.block(B2C)
 
-    B2C = [Cs[0]]
-    for i in range(1, N):
-        B2C.append(Jxs[i] @ B2C[-1] + Cs[i])
-    B2C = np.concatenate(B2C, axis=0)
+    B2C = B2C @ np.concatenate(Cs, axis=0)
 
     # print(A.shape, Jx.shape, x_nom.reshape(-1, 1).shape, C.reshape(-1, 1).shape, expected.flatten().reshape(-1, 1).shape)
 
@@ -139,7 +143,7 @@ def mpc(expected, params, x_nom, u_nom, Q, R, Qf, max_change=3, max_value=12):
 
 
     # Q = [np.exp(Q) / np.exp(N-1) for i in range(N-1)]
-    Q = [Q * np.exp(0.01 * i) for i in range(N-1)]
+    Q = [Q for i in range(N-1)]
     # Q = [Q for i in range(N-1)]
     Q = sparse.block_diag(Q + [Qf])
     R = sparse.kron(sparse.eye(N), R)
@@ -175,8 +179,8 @@ def mpc(expected, params, x_nom, u_nom, Q, R, Qf, max_change=3, max_value=12):
     return res.x
 
 if __name__ == "__main__":
-    N = 20
-    x_nom = np.array([-50, 50, -np.pi/2, 0.0, 0.0])
+    N = 30
+    x_nom = np.array([0, 0, -np.pi/2, 0.0, 0.0])
     u_nom = [np.random.randn(2) for i in range(N)]
     Q = np.diag([1.0, 1.0, 0.0, 0.0, 0.0])
     R = np.eye(2) * 0.0001
@@ -185,6 +189,21 @@ if __name__ == "__main__":
     expected = np.zeros((N, x_nom.shape[0]), dtype=np.float32)
     expected[:, :] = [50, 50, np.pi/2, 0, 0]
 
+    sim_steps = 300
+    mpcdt = 0.04
+    realdt = 0.02
+
+    path_x = CubicSpline(
+        np.linspace(0, 5, 4),
+        np.array([122.3, 20.8, -96.5, -105.0]),
+        bc_type='natural'
+    )
+    path_y = CubicSpline(
+        np.linspace(0, 5, 4),
+        np.array([39.4, -39.0, 86.9, 9.4]),
+        bc_type='natural'
+    )
+
     params = Params(
         dt=0.01,
         gain=6.03627741577 * 4.125 * 0.75,
@@ -192,17 +211,14 @@ if __name__ == "__main__":
         width=30.54
     )
 
-    mpcdt = 0.06
-    realdt = 0.04
-
     time = 0
     xy = []
     theta = []
     targets = []
-    for i in range(150):
+    for i in range(sim_steps):
         h = np.linspace(time, time + mpcdt*N, N)
-        expected[:, 0] = 50 * np.sqrt(2) * np.cos(h) / (np.sin(h)**2 + 1)
-        expected[:, 1] = 50 * np.sqrt(2) * np.cos(h) * np.sin(h) / (np.sin(h)**2 + 1)
+        expected[:, 0] = path_x(h)
+        expected[:, 1] = path_y(h)
         targets.append((expected[0, 0], expected[0, 1]))
 
         params.dt = mpcdt
@@ -212,8 +228,10 @@ if __name__ == "__main__":
         u_nom = [np.array([u[i], u[i+1]]) for i in range(0, len(u), 2)]
         output_u = u_nom[0].copy()
         # u_nom[0] = np.clip(u_nom[0], -12, 12); u_nom[1] = np.clip(u_nom[1], -12, 12)
+        old_theta = x_nom[2]
         x_nom = f(x_nom, output_u, params, np)
-        # x_nom[2] += np.random.normal(0, 0.2)
+        new_theta = x_nom[2]
+        x_nom[2] = old_theta + (new_theta - old_theta) * np.random.normal(1.0, 0.5)
 
         print(f"ts {i+1}: {output_u[0]:.2f}, {output_u[1]:.2f} | {x_nom[0]:.2f}, {x_nom[1]:.2f}, {x_nom[2]:.2f}")
         xy.append(tuple(x_nom[:2].round(2)))
