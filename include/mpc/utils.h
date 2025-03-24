@@ -33,7 +33,7 @@ void alpha_beta(
     const std::vector<Vecf>& desired_poses, 
     const Vecf& x_nom, const Vecf& u_nom, 
     const PredictParams& params,
-    Vecf& alpha, Matf& beta);
+    Vecf& alpha, Matf& beta, Matf* betaTQ = nullptr);
 
 // std::pair<Vecf, Eigen::MatrixXf> alpha_beta(
 //     const Vecf& desired_poses,

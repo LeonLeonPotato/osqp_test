@@ -22,7 +22,7 @@ void mpc::alpha_beta(
     const std::vector<Vecf>& desired_poses, 
     const Vecf& x_nom, const Vecf& u_nom, 
     const PredictParams& params,
-    Vecf& alpha, Matf& beta)
+    Vecf& alpha, Matf& beta, Matf* betaTQ)
 {
     int N = std::min(params.N, (int) desired_poses.size());
 
@@ -43,16 +43,26 @@ void mpc::alpha_beta(
         B2C.segment(5*i, 5) = B2C.segment(5*(i-1), 5) + A.block(5*i, 0, 5, 5) * c;
     }
 
+    bool use_betaTQ = betaTQ != nullptr;
+    if (use_betaTQ) betaTQ->resize(N*5, N*5);
     beta.resize(N*5, N*2);
     for (int i = 0; i < N; i++) {
         Matf fill = A.block(5*i, 0, 5, 5) * ju;
+        Matf fillTQ = fill.transpose() * params.Q;
 
         for (int j = 0; j < N - i; j++) {
             int row = (i+j)*5, col = j*2;
             beta.block(row, col, 5, 2) = fill;
+            if (use_betaTQ) {
+                betaTQ->block(row, col, 5, 2) = fillTQ;
+            }
+
             if (i != 0) {
                 row = j*5; col = (i+j)*2;
                 beta.block(row, col, 5, 2).setZero();
+                if (use_betaTQ) {
+                    betaTQ->block(row, col, 5, 2).setZero();
+                }
             }
         }
     }
