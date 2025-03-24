@@ -1,5 +1,4 @@
 #include "mpc/utils.h"
-#include "Eigen/src/Core/Matrix.h"
 #include "api.h"
 #include <utility>
 
@@ -19,29 +18,24 @@ ADVec mpc::diffdrive(const ADVec &x, const ADVec &u, const ModelParams& params) 
     return xdot;
 }
 
-std::pair<Eigen::VectorXf, Eigen::MatrixXf> mpc::alpha_beta(
-    const std::vector<Eigen::VectorXf>& desired_poses,
-    const Eigen::VectorXf& x_nom, const Eigen::VectorXf& u_nom, 
-    const MPCParams& params)
+void mpc::alpha_beta(
+    const std::vector<Vecf>& desired_poses, 
+    const Vecf& x_nom, const Vecf& u_nom, 
+    const PredictParams& params,
+    Vecf& alpha, Matf& beta, Matf* betaTQ)
 {
-    long long start = pros::micros();
-
-    using type_use = float;
-    using Mat = Eigen::MatrixX<type_use>;
-    using Vec = Eigen::VectorX<type_use>;
-
     int N = std::min(params.N, (int) desired_poses.size());
 
     ADVec fout;
-    ADVec ad_x_nom = x_nom.cast<double>().cast<autodiff::real>();
-    ADVec ad_u_nom = u_nom.cast<double>().cast<autodiff::real>();
-    Mat jx = autodiff::jacobian(diffdrive, autodiff::wrt(ad_x_nom), autodiff::at(ad_x_nom, ad_u_nom, params.model), fout).cast<type_use>();
-    Mat ju = autodiff::jacobian(diffdrive, autodiff::wrt(ad_u_nom), autodiff::at(ad_x_nom, ad_u_nom, params.model), fout).cast<type_use>();
-    Vec c = fout.cast<type_use>() - jx * x_nom.cast<type_use>() - ju * u_nom.cast<type_use>();
+    ADVec ad_x_nom = x_nom.cast<autodiff::real>();
+    ADVec ad_u_nom = u_nom.cast<autodiff::real>();
+    Matf jx = autodiff::jacobian(diffdrive, autodiff::wrt(ad_x_nom), autodiff::at(ad_x_nom, ad_u_nom, params.model), fout).cast<float>();
+    Matf ju = autodiff::jacobian(diffdrive, autodiff::wrt(ad_u_nom), autodiff::at(ad_x_nom, ad_u_nom, params.model), fout).cast<float>();
+    Vecf c = fout.cast<float>() - jx * x_nom - ju * u_nom;
 
-    Mat A(N*5, 5);
+    Matf A(N*5, 5);
     A.block(0, 0, 5, 5).setIdentity(); // Set the first block to the identity matrix, which is jx^0
-    Vec B2C(N*5);
+    Vecf B2C(N*5);
     B2C.segment(0, 5) = c; // This is equal to the first block of A * c, which is equal to c
 
     for (int i = 1; i < N; i++) {
@@ -49,26 +43,35 @@ std::pair<Eigen::VectorXf, Eigen::MatrixXf> mpc::alpha_beta(
         B2C.segment(5*i, 5) = B2C.segment(5*(i-1), 5) + A.block(5*i, 0, 5, 5) * c;
     }
 
-    Mat beta(N*5, N*2);
+    bool use_betaTQ = betaTQ != nullptr;
+    if (use_betaTQ) betaTQ->resize(N*5, N*5);
+    beta.resize(N*5, N*2);
     for (int i = 0; i < N; i++) {
-        Mat fill = A.block(5*i, 0, 5, 5) * ju;
+        Matf fill = A.block(5*i, 0, 5, 5) * ju;
+        Matf fillTQ = fill.transpose() * params.Q;
 
         for (int j = 0; j < N - i; j++) {
             int row = (i+j)*5, col = j*2;
             beta.block(row, col, 5, 2) = fill;
+            if (use_betaTQ) {
+                betaTQ->block(row, col, 5, 2) = fillTQ;
+            }
+
+            if (i != 0) {
+                row = j*5; col = (i+j)*2;
+                beta.block(row, col, 5, 2).setZero();
+                if (use_betaTQ) {
+                    betaTQ->block(row, col, 5, 2).setZero();
+                }
+            }
         }
     }
 
-    Eigen::VectorXf stacked_desired_poses(5*N);
+    Vecf stacked_desired_poses(5*N);
     for (int i = 0; i < N; i++) {
         stacked_desired_poses.segment(5*i, 5) = desired_poses[i];
     }
-    Eigen::VectorXf alpha = (A * jx * x_nom.cast<type_use>() + B2C).cast<float>() - stacked_desired_poses;
-
-    long long end = pros::micros();
-    std::cout << "Inner time taken: " << end - start << " us" << std::endl;
-
-    return {std::move(alpha), std::move(beta.cast<float>())};
+    alpha = A * jx * x_nom + B2C - stacked_desired_poses;
 }
 
 // std::pair<Eigen::VectorXf, Eigen::MatrixXf> mpc::alpha_beta(

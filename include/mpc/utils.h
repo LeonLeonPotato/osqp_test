@@ -6,29 +6,39 @@
 
 namespace mpc {
 using ADVec = autodiff::VectorXreal;
+using Vecf =  Eigen::VectorXf;
+using Matf = Eigen::MatrixXf;
 
 struct ModelParams {
     float dt, L, gain, tc;
 };
 
+struct PredictParams {
+    ModelParams model;
+    int N = INT_MAX;
+    Matf Q;
+    Vecf R;
+};
+
 struct MPCParams {
     ModelParams model;
+    int N = INT_MAX;
     float control_loop_dt;
-    int N;
 };
 
 
 ADVec diffdrive(const ADVec& x, const ADVec& u, const ModelParams& params);
 
-std::pair<Eigen::VectorXf, Eigen::MatrixXf> alpha_beta(
-    const std::vector<Eigen::VectorXf>& desired_poses, 
-    const Eigen::VectorXf& x_nom, const Eigen::VectorXf& u_nom, 
-    const MPCParams& params);
+void alpha_beta(
+    const std::vector<Vecf>& desired_poses, 
+    const Vecf& x_nom, const Vecf& u_nom, 
+    const PredictParams& params,
+    Vecf& alpha, Matf& beta, Matf* betaTQ = nullptr);
 
-// std::pair<Eigen::VectorXf, Eigen::MatrixXf> alpha_beta(
-//     const Eigen::VectorXf& desired_poses,
+// std::pair<Vecf, Eigen::MatrixXf> alpha_beta(
+//     const Vecf& desired_poses,
 //     const ADVec& x_nom, const ADVec& u_nom, 
 //     const MPCParams& params);
 
-std::pair<Eigen::VectorXf, Eigen::MatrixXf> alpha_beta(void);
+std::pair<Vecf, Eigen::MatrixXf> alpha_beta(void);
 }
