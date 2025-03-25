@@ -9,10 +9,10 @@
 #define OSQPEIGEN_DATA_HPP
 
 // Eigen
-#include <Eigen/Dense>
+#include "Eigen/Dense"
 
 // OSQP
-#include "osqp.h"
+#include "osqp/osqp.h"
 
 // OsqpEigen
 #include "OsqpEigen/SparseMatrixHelper.hpp"

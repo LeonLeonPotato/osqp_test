@@ -12,8 +12,8 @@ class Localization {
         virtual float theta() = 0;
         virtual float vl() = 0;
         virtual float vr() = 0;
-        Vecf get_state(void) {
-            return Vecf(5);
+        Vec get_state(void) {
+            return Vec(5);
         }
 };
 

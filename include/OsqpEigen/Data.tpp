@@ -7,6 +7,7 @@
 
 #include <iostream>
 
+#include "Eigen/Sparse"
 #include "OsqpEigen/Debug.hpp"
 
 template <typename Derived>

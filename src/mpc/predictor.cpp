@@ -1,15 +1,16 @@
 #include "predictor.h"
 #include "osqp/osqp.h"
 #include "osqp/osqp_api_types.h"
+#include "OsqpEigen/OsqpEigen.h"
 #include "utils.h"
 #include <vector>
 
 using namespace mpc;
 
-std::vector<Vecf> mpc::predict(
+std::vector<Vec> mpc::predict(
     const Localization& localizer,
-    const std::vector<Vecf>& desired_poses, 
-    const Vecf& x_nom, const Vecf& u_nom, 
+    const std::vector<Vec>& desired_poses, 
+    const Vec& x_nom, const Vec& u_nom, 
     const PredictParams& params)
 {
     // long long start = pros::micros();
@@ -23,6 +24,6 @@ std::vector<Vecf> mpc::predict(
     // long long end = pros::micros();
     // std::cout << "Predictor took " << end - start << " us" << std::endl;
     
-    std::vector<Vecf> predictions;
+    std::vector<Vec> predictions;
     return predictions;
 }

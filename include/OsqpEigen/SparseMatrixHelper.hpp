@@ -12,7 +12,7 @@
 #include <iostream>
 
 // eigen
-#include <Eigen/Sparse>
+#include "Eigen/Sparse"
 
 #include "OsqpEigen/Compat.hpp"
 

@@ -5,9 +5,9 @@
 #include <vector>
 
 namespace mpc {
-std::vector<Vecf> predict(
+std::vector<Vec> predict(
     const Localization& localizer,
-    const std::vector<Vecf>& desired_poses, 
-    const Vecf& x_nom, const Vecf& u_nom, 
+    const std::vector<Vec>& desired_poses, 
+    const Vec& x_nom, const Vec& u_nom, 
     const PredictParams& params);
 }
