@@ -1,5 +1,6 @@
 #include "predictor.h"
 #include "osqp/osqp.h"
+#include "osqp/osqp_api_types.h"
 #include "utils.h"
 #include <vector>
 
