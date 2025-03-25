@@ -40,8 +40,7 @@ bool OsqpEigen::Data::setHessianMatrix(const Eigen::SparseCompressedBase<Derived
 
     // set the hessian matrix
     //  osqp 0.6.0 required only the upper triangular part of the hessian matrix
-    Derived hessianMatrixUpperTriangular = hessianMatrix.template triangularView<Eigen::Upper>();
-    if (!OsqpEigen::SparseMatrixHelper::createOsqpSparseMatrix(hessianMatrixUpperTriangular,
+    if (!OsqpEigen::SparseMatrixHelper::createOsqpSparseMatrix(hessianMatrix,
                                                                m_data->P))
     {
         debugStream() << "[OsqpEigen::Data::setHessianMatrix] Unable to instantiate the osqp "

@@ -132,26 +132,29 @@ void mpc::compute_penalties(
         }
     }
     
-    H.reserve(4*N*N);
-    H.resize(2*N, 2*N);
+    std::vector<Eigen::Triplet<float>> triplets;
     for (int i = 0; i < N; i++) {
         for (int j = i; j < N; j++) {
             int dstrow = i*2, dstcol = j*2;
-            auto blk = dp.block(2*j, 0, 2, 2);
+            Mat blk = dp.block(2*j, 0, 2, 2);
+            if (i == j) {
+                blk += params.R;
+            }
+
 
             for (int k = 0; k < blk.rows(); k++) {
                 for (int l = 0; l < blk.cols(); l++) {
+                    if (dstrow + k > dstcol + l) continue;
                     if (fabsf(blk(k, l)) > Eigen::NumTraits<float>::dummy_precision()) {
                         float val = blk(k, l);
-                        if (i == j) val += params.R(k, l);
-                        printf("(%d, %d) = blk(%d, %d)\n", dstrow+k, dstcol+l, k, l);
-                        H.insert(dstrow + k, dstcol + l) = blk(k, l);
-                        if (i != j) H.insert(dstcol + k, dstrow + l) = blk(k, l);
+                        triplets.emplace_back(dstrow + k, dstcol + l, val);
                     }
                 }
             }
         }
     }
+    H.resize(N*2, N*2);
+    H.setFromTriplets(triplets.begin(), triplets.end());
 
     Mat transposed_jx = jx.transpose().eval();
     Mat transposed_ju = ju.transpose().eval();
