@@ -1,7 +1,7 @@
 {
   "py/object": "pros.conductor.project.Project",
   "py/state": {
-    "project_name": "osqp_test",
+    "project_name": "qpoases",
     "target": "v5",
     "templates": {
       "kernel": {
@@ -255,7 +255,8 @@
       }
     },
     "upload_options": {
-      "after": "run"
+      "after": "run",
+      "slot": 2
     },
     "use_early_access": true
   }

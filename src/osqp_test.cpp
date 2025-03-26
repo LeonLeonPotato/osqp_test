@@ -1,80 +1,71 @@
-#include "OsqpEigen/Constants.hpp"
-#include "OsqpEigen/OsqpEigen.h"
-#include "OsqpEigen/Solver.hpp"
-#include "mpc/localization.h"
-#include "mpc/predictor.h"
-#include "mpc/utils.h"
 #include "pros/rtos.hpp"
 #include <iostream>
 #include <vector>
 
 #include "Eigen/Sparse"
+#include "qpOASES.hpp"
+#include "qpOASES/Matrices.hpp"
+
+using namespace Eigen;
+using namespace std;
+
+MatrixXd generateDifferenceArray(int n) {
+    MatrixXd diffArray(n-1, n);
+    for (int i = 0; i < n-1; ++i) {
+        diffArray(i, i) = 1;
+        diffArray(i, i+1) = -1;
+    }
+    return diffArray;
+}
+
+// Main cold start test
+void coldStartTest(int n) {
+    const int nC = 4*n-2; // Number of constraints
+
+    // Randomly generate the Hessian and gradient using Eigen
+    MatrixXd H = MatrixXd::Random(n, n); // Hessian matrix
+    VectorXd g = VectorXd::Random(n); // Gradient vector
+
+    // Make Hessian positive definite
+    H = H.transpose() * H;
+
+    // Create constraint matrix [I, difference array]^T
+    MatrixXd I = MatrixXd::Identity(n, n); // Identity matrix
+    MatrixXd diffArray = generateDifferenceArray(n);
+
+    // Stack I and difference array
+    MatrixXd A(nC, n);
+    A << I, diffArray.transpose();
+
+    // Bounds (For simplicity we set them to zero bounds, as no values are given)
+    VectorXd lb = VectorXd::Ones(nC) * -3; // Lower bounds
+    VectorXd ub = VectorXd::Ones(nC) * 3; // Upper bounds
+    VectorXd lbA = VectorXd::Ones(nC) * -12; // Lower bounds
+    VectorXd ubA = VectorXd::Ones(nC) * 12; // Upper bounds
+
+    // Initialize qpOASES problem
+    qpOASES::QProblem qp(n, nC);
+    
+    // Time cold start
+    auto start = pros::micros();
+    
+    // Solve the optimization problem (cold start)
+    qpOASES::real_t H_qp[n * n];
+    qpOASES::real_t A_qp[n * n];
+    Map<Matrix<qpOASES::real_t, Dynamic, Dynamic, ColMajor>>(H_qp, H.rows(), H.cols()) = H.cast<qpOASES::real_t>();
+    Map<Matrix<qpOASES::real_t, Dynamic, Dynamic, ColMajor>>(A_qp, A.rows(), A.cols()) = A.cast<qpOASES::real_t>();
+    qp.init(H_qp, g.data(), A_qp, lb.data(), ub.data(), nullptr, nullptr, 10);
+
+    auto end = pros::micros();
+    auto duration = end - start;
+
+    // Output the time taken
+    cout << "Time for n = " << n << ": " << duration << " μs" << endl;
+}
 
 void test() {
-    long long gstart = pros::micros();
-    int N = 25;
-
-    mpc::PredictParams params {{0.03, 30.54, 18.674, 0.1626}, N};
-    params.Q = Eigen::Vector<float, 5> {1, 1, 1, 0, 0}.asDiagonal();
-    params.R = Eigen::MatrixXf::Identity(2, 2) * 0.0f;
-    Eigen::VectorXf x_nom(5);
-    x_nom << 1, -1, M_PI_2 + 0.01, 5, 4.9;
-    Eigen::VectorXf u_nom(2);
-    u_nom << 1, -1;
-
-    mpc::Vec target (5);
-    target << 0, 100, 0, 0, 0;
-    std::vector<Eigen::VectorXf> desired_poses(N, target);
-    mpc::SimulatedLocalizer localizer(0, 0, 0);
-
-    // mpc::predict(localizer, desired_poses, x_nom, u_nom, params);
-    mpc::SPMat H;
-    mpc::Vec q;
-    long long start1 = pros::micros();
-    mpc::compute_penalties(desired_poses, x_nom, u_nom, params, H, q);
-    long long end1 = pros::micros();
-    std::cout << "Penalty time creation: " << end1 - start1 << " us" << std::endl;
-
-    // std::cout << "H: \n" << H.toDense() << std::endl;
-    // std::cout << "q: \n" << q << std::endl;
-    Eigen::SparseMatrix<float> eye (4*N - 2, 2*N);
-    for (int i = 0; i < 2*N; i++) eye.insert(i, i) = 1.0f;
-    for (int i = 0; i < 2*N - 2; i++) {
-        eye.insert(i + 2*N, i) = 1.0f;
-        eye.insert(i + 2*N, i+2) = -1.0f;
+    for (int i = 10; i <= 100; i += 10) {
+        coldStartTest(i);
+        pros::delay(100);
     }
-    mpc::Vec lower_bound(4*N - 2);
-    lower_bound.head(2*N).setConstant(-12);
-    lower_bound.tail(2*N).setConstant(-1);
-    mpc::Vec upper_bound(4*N - 2);
-    upper_bound.head(2*N).setConstant(12);
-    upper_bound.tail(2*N).setConstant(1);
-
-    // printf("Setting up solver\n");
-    OsqpEigen::Solver solver;
-    solver.settings()->setWarmStart(true);
-    solver.settings()->setVerbosity(true);
-    solver.settings()->setMaxIteration(50);
-    solver.data()->setNumberOfConstraints(4*N - 2);
-    solver.data()->setNumberOfVariables(2*N);
-    solver.data()->setHessianMatrix(H);
-    solver.data()->setGradient(q);
-    solver.data()->setLinearConstraintsMatrix(eye);
-    solver.data()->setLowerBound(lower_bound);
-    solver.data()->setUpperBound(upper_bound);
-
-    solver.initSolver();
-    long long start2 = pros::micros();
-    auto flag = solver.solveProblem();
-    long long end2 = pros::micros();
-    // printf("Flag: %d\n", (int) flag);
-    if (flag != OsqpEigen::ErrorExitFlag::NoError) return;
-
-    mpc::Vec solution = solver.getSolution();
-
-    std::cout << "Solution:\n" << solution << std::endl;
-    std::cout << "Solve time: " << end2 - start2 << " us" << std::endl;
-
-    long long gend = pros::micros();
-    std::cout << "Total time: " << gend - gstart << " us" << std::endl;
 }
