@@ -12,6 +12,12 @@ using Vec =  Eigen::VectorX<type>;
 using Mat = Eigen::MatrixX<type>;
 using SPMat = Eigen::SparseMatrix<type>;
 
+enum class OutputUnits {
+    RPM,
+    RAD_PER_SECOND,
+    VOLTS
+};
+
 template <typename T, typename = std::enable_if_t<std::is_arithmetic<T>::value>>
 static inline T sinc(T x) {
     if (std::abs(x) < 1e-3) return 1 - (x*x/6.0f) + (x*x*x*x/120.0f);
@@ -36,5 +42,10 @@ static inline float average(const std::vector<T>& vec) {
 static inline float modfix(float x, float y) {
     float result = fmodf(x, y);
     return result + (result < 0) * y;
+}
+
+static inline auto ad_sinc(autodiff::real x) {
+    if (abs(x) < 1e-3) return autodiff::real(1) - (x*x/6.0f) + (x*x*x*x/120.0f);
+    return sin(x) / x;
 }
 }

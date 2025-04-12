@@ -4,23 +4,20 @@
 #include "pros/apix.h"
 #include "pros/misc.h"
 #include "pros/misc.hpp"
+#include "mpclib/testing.h"
 
 #define SCALE (127.0f / 12.0f)
 
 void initialize() {
 	// We use serial to communicate, so this needs to be called or else wierd shit happens
-	pros::c::serctl(SERCTL_DISABLE_COBS, nullptr);
+	// pros::c::serctl(SERCTL_DISABLE_COBS, nullptr);
 }
 
 void disabled() {}
 void competition_initialize() {}
 void autonomous() {}
 
-void opcontrol() {
-
-}
-
-void driver() {
+static void driver_test() {
 	printf("[RESET]\n");
 	pros::Controller master(pros::E_CONTROLLER_MASTER);
 
@@ -40,4 +37,8 @@ void driver() {
 
 	actuator.volt(0, 0);
 	while (true) { pros::delay(10); }
+}
+
+void opcontrol() {
+	test();
 }

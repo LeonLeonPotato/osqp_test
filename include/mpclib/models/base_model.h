@@ -9,8 +9,11 @@ public:
         float dt; // Time step, in seconds
     };
 
-    virtual consteval int get_state_size() const = 0;
-    virtual consteval int get_action_size() const = 0;
+    virtual constexpr int get_state_size() const = 0;
+    virtual constexpr int get_action_size() const = 0;
+    virtual constexpr int get_number_state_box_constraints() const = 0;
+    virtual constexpr int get_number_action_box_constraints() const = 0;
+    virtual constexpr int get_number_general_constraints() const = 0;
 
     virtual ADVec autodiff(const ADVec& x, const ADVec& u) const = 0;
     virtual Vec infer(const Vec& x, const Vec& u) const = 0;
@@ -29,12 +32,18 @@ public:
     virtual float* get_general_upper_bound() { return nullptr; }
     virtual int* get_general_lower_bound_mask() { return nullptr; }
     virtual int* get_general_upper_bound_mask() { return nullptr; }
+
+    virtual float* get_general_constraints_state_matrix() { return nullptr; }
+    virtual float* get_general_constraints_action_matrix() { return nullptr; }
 };
 
 class DriveModel : public Model {
 public:
-    consteval int get_state_size() const override { return 5; }
-    consteval int get_action_size() const override { return 2; }
+    static constexpr int STATE_SIZE = 5; // x, y, theta, [velocities]
+    static constexpr int ACTION_SIZE = 2; // [accelerations]
+
+    constexpr int get_state_size() const override { return STATE_SIZE; }
+    constexpr int get_action_size() const override { return ACTION_SIZE; }
 
     virtual float* get_state_lower_bound() override { return state_lower_bound; }
     virtual float* get_state_upper_bound() override { return state_upper_bound; }
@@ -45,11 +54,6 @@ public:
     virtual float* get_action_upper_bound() override { return action_upper_bound; }
     virtual int* get_action_lower_bound_mask() override { return action_lower_bound_mask; }
     virtual int* get_action_upper_bound_mask() override { return action_upper_bound_mask; }
-
-    virtual float* get_general_lower_bound() override { return general_lower_bound; }
-    virtual float* get_general_upper_bound() override { return general_upper_bound; }
-    virtual int* get_general_lower_bound_mask() override { return general_lower_bound_mask; }
-    virtual int* get_general_upper_bound_mask() override { return general_upper_bound_mask; }
 
 protected:
     // NONE of this can be const because HPIPM for some reason expects non-const arrays?
@@ -62,10 +66,5 @@ protected:
     float action_upper_bound[2] = {0, 0};
     int action_lower_bound_mask[2] = {1, 1};
     int action_upper_bound_mask[2] = {1, 1};
-
-    float general_lower_bound[2] = {0, 0};
-    float general_upper_bound[2] = {0, 0};
-    int general_lower_bound_mask[2] = {1, 1};
-    int general_upper_bound_mask[2] = {1, 1};
 };
 }
