@@ -62,7 +62,7 @@ void test_ocp_qp() {
     DifferentialDriveModel simulator(simulation_params);
 
     OCPParams ocp_params;
-    ocp_params.N = 30;
+    ocp_params.N = 40;
     ocp_params.Q = (Eigen::Vector<float, 5> {1, 1, 0, 0, 0}).asDiagonal();
     ocp_params.R = Mat::Zero(2, 2);
     ocp_params.warm_start_level = OCPParams::WarmStartLevel::STATE;
@@ -94,8 +94,8 @@ void test_ocp_qp() {
             s_ocp_qp_sol_get_x(j, &ocpqp.qp_sol, x_buffer.data());
             s_ocp_qp_sol_get_u(j-1, &ocpqp.qp_sol, u_buffer.data());
 
-            s_ocp_qp_sol_set_x(j-1, x_buffer.data(), &ocpqp.qp);
-            s_ocp_qp_set_ubx(j, x_buffer.data(), &ocpqp.qp);
+            s_ocp_qp_sol_set_x(j-1, x_buffer.data(), &ocpqp.qp_sol);
+            s_ocp_qp_sol_set_u(std::max(0, j-2), u_buffer.data(), &ocpqp.qp_sol);
         }
 
         printf("Action: [%.2f, %.2f] State: [%.3f, %.3f, %.3f, %.3f, %.3f]\n", u0[0], u0[1], x0[0], x0[1], x0[2], x0[3], x0[4]);
