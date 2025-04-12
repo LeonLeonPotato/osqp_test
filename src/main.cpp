@@ -1,11 +1,11 @@
 #include "main.h"
-#include "mpc/localization.h"
-#include "mpc/actuator.h"
-#include "osqp_test.h"
+#include "mpclib/localization.h"
+#include "mpclib/actuator.h"
 #include "pros/apix.h"
 #include "pros/misc.h"
 #include "pros/misc.hpp"
 
+#define SCALE (127.0f / 12.0f)
 
 void initialize() {
 	// We use serial to communicate, so this needs to be called or else wierd shit happens
@@ -16,32 +16,25 @@ void disabled() {}
 void competition_initialize() {}
 void autonomous() {}
 
-static inline float minimum_mod_diff(float a, float b, float mod) {
-    float diff = fmodf(a - b + mod/2, mod) - mod/2;
-    return diff + (diff < -mod/2) * mod;
+void opcontrol() {
+
 }
 
-void opcontrol() {
+void driver() {
 	printf("[RESET]\n");
 	pros::Controller master(pros::E_CONTROLLER_MASTER);
 
-	mpc::SimulatedLocalizer localizer;
-	mpc::SimulatedActuator actuator;
-	float tx = -130;
-	float ty = 100;
+	mpclib::SimulatedLocalizer localizer;
+	mpclib::SimulatedActuator actuator;
+
 	while (true) {
-		float dx = tx - localizer.x();
-		float dy = ty - localizer.y();
-		float dist = sqrtf(dx*dx + dy*dy);
-		if (dist < 2.54) break;
-		float angular_diff = minimum_mod_diff(localizer.theta(), atan2f(dy, dx), M_TWOPI);
-		printf("%f\n", localizer.theta());
-		float k1 = 0.16;
-		float k2 = 5.0;
-		
-		float forward = k1 * dist * cosf(angular_diff);
-		float turn = k2 * angular_diff;
-		actuator.volt(forward + turn, forward - turn);
+		int left_x = master.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_X);
+		int left_y = master.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y);
+		int right_x = master.get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X);
+		int right_y = master.get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_Y);
+		float left = std::clamp(left_y + right_x, -127, 127) / SCALE;
+		float right = std::clamp(left_y - right_x, -127, 127) / SCALE;
+		actuator.volt(left, right);
 		pros::delay(20);
 	}
 
