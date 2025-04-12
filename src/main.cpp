@@ -1,10 +1,10 @@
 #include "main.h"
-#include "mpclib/localization.h"
-#include "mpclib/actuator.h"
 #include "pros/apix.h"
 #include "pros/misc.h"
 #include "pros/misc.hpp"
-#include "mpclib/testing.h"
+#include "testing/localization.h"
+#include "testing/actuator.h"
+#include "testing/testing.h"
 
 #define SCALE (127.0f / 12.0f)
 
@@ -40,5 +40,5 @@ static void driver_test() {
 }
 
 void opcontrol() {
-	test();
+	test_model();
 }

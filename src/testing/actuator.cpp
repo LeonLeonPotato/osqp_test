@@ -1,4 +1,4 @@
-#include "mpclib/actuator.h"
+#include "testing/actuator.h"
 #include "hpipm/hpipm_s_ocp_qp.h"
 
 using namespace mpclib;
