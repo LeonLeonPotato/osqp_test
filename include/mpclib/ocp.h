@@ -12,6 +12,13 @@ struct OCPParams {
     int N;
     Mat Q;
     Mat R;
+
+    enum class WarmStartLevel {
+        NONE = 0,
+        STATE = 1,
+        STATE_AND_INPUT = 2,
+        FULL = 3
+    } warm_start_level = WarmStartLevel::STATE;
 };
 
 struct OCPQP {
@@ -35,7 +42,7 @@ struct OCPQP {
 
     OCPQP(const Model& model, const OCPParams& ocp_params);
 
-    void set_initial_state(Vec& x_nom);
+    void set_initial_state(const Vec& x_nom);
 
     void relinearize(const Vec& x, const Vec& u);
     void relinearize(const Vec& x, const std::vector<Vec>& u);
@@ -46,6 +53,11 @@ struct OCPQP {
     void set_target_input(const Vec& u_desired);
     void set_target_input(const std::vector<Vec>& u_desired);
 
-    void solve(bool silent = true);
+    int solve(bool silent = true);
+
+private:
+    void setup_dimensions();
+    void setup_constraints();
+    void setup_costs();
 };
 }

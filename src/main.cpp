@@ -41,4 +41,5 @@ static void driver_test() {
 
 void opcontrol() {
 	test_model();
+	test_ocp_qp();
 }

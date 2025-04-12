@@ -55,7 +55,7 @@ void DifferentialDriveModel::resync_from_params() {
     general_constraints_.clear();
     general_constraints_.reserve(GENERAL_CONSTRAINTS_SIZE);
     for (int i = 0; i < GENERAL_CONSTRAINTS_SIZE; ++i) {
-        action_constraints_.emplace_back(Constraint { 
+        general_constraints_.emplace_back(Constraint { 
             -params_.max_speed, 
             params_.max_speed, 
             i // Actually this index parameter doesnt matter for general constraints
