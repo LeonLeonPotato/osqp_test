@@ -80,8 +80,8 @@ OCPQP::OCPQP(const Model& model, const OCPParams& ocp_params)
 	s_ocp_qp_ipm_arg_set_default(hpipm_mode::SPEED, &ipm_arg); // In this case accuracy is not as important as speed
     int warm_start_level = static_cast<int>(ocp_params.warm_start_level);
     s_ocp_qp_ipm_arg_set_warm_start(&warm_start_level, &ipm_arg);
-    int max_iter = 5;
-    s_ocp_qp_ipm_arg_set_iter_max(&max_iter, &ipm_arg);
+    int it = ocp_params.iterations;
+    s_ocp_qp_ipm_arg_set_iter_max(&it, &ipm_arg);
 
     hpipm_size_t ipm_size = s_ocp_qp_ipm_ws_memsize(&dim, &ipm_arg);
 	ipm_mem = malloc(ipm_size);
@@ -222,19 +222,25 @@ void OCPQP::setup_costs() {
 
     // Prevent penalizing the initial state
     s_ocp_qp_set_Q(0, zeros.data(), &qp);
-    s_ocp_qp_set_R(0, zeros.data(), &qp);
     s_ocp_qp_set_S(0, zeros.data(), &qp);
     s_ocp_qp_set_q(0, zeros.data(), &qp);
     s_ocp_qp_set_r(0, zeros.data(), &qp);
 
-    // Penalize every state from [1, N]
-    for (int i = 0; i <= ocp_params.N; i++) {
+    // Penalize every state from [1, N-1]
+    for (int i = 1; i < ocp_params.N; i++) {
         s_ocp_qp_set_Q(i, const_cast<float*>(ocp_params.Q.data()), &qp);
         s_ocp_qp_set_R(i, const_cast<float*>(ocp_params.R.data()), &qp);
         s_ocp_qp_set_S(i, zeros.data(), &qp); // No action-state correlation cost
         s_ocp_qp_set_q(i, zeros.data(), &qp); // No linear state cost (Implicitly makes the optimal state equal to the zero vector)
         s_ocp_qp_set_r(i, zeros.data(), &qp); // No linear action cost
     }
+
+    // Final state penalty
+    s_ocp_qp_set_Q(ocp_params.N, const_cast<float*>(ocp_params.Qf.data()), &qp);
+    s_ocp_qp_set_R(ocp_params.N-1, const_cast<float*>(ocp_params.Rf.data()), &qp);
+    s_ocp_qp_set_S(ocp_params.N, zeros.data(), &qp);
+    s_ocp_qp_set_q(ocp_params.N, zeros.data(), &qp);
+    s_ocp_qp_set_r(ocp_params.N, zeros.data(), &qp);
 }
 
 void OCPQP::set_initial_state(const Vec& x) {
@@ -262,8 +268,29 @@ void OCPQP::relinearize(const Vec& x, const Vec& u) {
     }
 }
 
-void OCPQP::relinearize(const Vec& x, const std::vector<Vec>& u) {
-    throw new std::invalid_argument("Not implemented yet");
+void OCPQP::relinearize(Vec x, const std::vector<Vec>& u) {
+    ADVec ad_x = x.cast<autodiff::real>();
+    Mat jx, ju;
+    Vec c;
+    for (int i = 0; i < u.size(); i++) {
+        ADVec fout;
+        ADVec ad_u = u[i].cast<autodiff::real>();
+        jx = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_x), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
+        ju = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_u), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
+        c = fout.cast<float>() - (jx * x) - (ju * u[i]);
+
+        s_ocp_qp_set_A(i, jx.data(), &qp);
+        s_ocp_qp_set_B(i, ju.data(), &qp);
+        s_ocp_qp_set_b(i, c.data(), &qp);
+
+        ad_x = fout.cast<float>().cast<autodiff::real>();
+    }
+
+    for (int i = u.size(); i < ocp_params.N; i++) {
+        s_ocp_qp_set_A(i, jx.data(), &qp);
+        s_ocp_qp_set_B(i, ju.data(), &qp);
+        s_ocp_qp_set_b(i, c.data(), &qp);
+    }
 }
 
 void OCPQP::relinearize(const std::vector<Vec>& x, const std::vector<Vec>& u) {
@@ -275,9 +302,12 @@ void OCPQP::set_target_state(const Vec& x_desired) {
     assert(ocp_params.Q.cols() == x_desired.size());
 
     Vec q_cost = -ocp_params.Q * x_desired;
-    for (int i = 0; i <= ocp_params.N; i++) {
+    for (int i = 1; i < ocp_params.N; i++) {
         s_ocp_qp_set_q(i, q_cost.data(), &qp);
     }
+
+    Vec qf_cost = -ocp_params.Qf * x_desired;
+    s_ocp_qp_set_q(ocp_params.N, qf_cost.data(), &qp);
 }
 
 int OCPQP::solve(bool silent) {

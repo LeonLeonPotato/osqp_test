@@ -10,8 +10,8 @@
 namespace mpclib {
 struct OCPParams {
     int N;
-    Mat Q;
-    Mat R;
+    Mat Q, Qf;
+    Mat R, Rf;
 
     enum class WarmStartLevel {
         NONE = 0,
@@ -19,6 +19,7 @@ struct OCPParams {
         STATE_AND_INPUT = 2,
         FULL = 3
     } warm_start_level = WarmStartLevel::STATE;
+    int iterations = 5;
 };
 
 struct OCPQP {
@@ -45,7 +46,7 @@ struct OCPQP {
     void set_initial_state(const Vec& x_nom);
 
     void relinearize(const Vec& x, const Vec& u);
-    void relinearize(const Vec& x, const std::vector<Vec>& u);
+    void relinearize(Vec x, const std::vector<Vec>& u);
     void relinearize(const std::vector<Vec>& x, const std::vector<Vec>& u);
 
     void set_target_state(const Vec& x_desired);
