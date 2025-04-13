@@ -10,7 +10,7 @@
 
 void initialize() {
 	// We use serial to communicate, so this needs to be called or else wierd shit happens
-	// pros::c::serctl(SERCTL_DISABLE_COBS, nullptr);
+	pros::c::serctl(SERCTL_DISABLE_COBS, nullptr);
 }
 
 void disabled() {}
@@ -40,6 +40,10 @@ static void driver_test() {
 }
 
 void opcontrol() {
-	test_model();
-	test_ocp_qp();
+	printf("[RESET]\n");
+
+	// test_model();
+	// test_ocp_qp();
+	test_in_sim();
+	// find_center();
 }

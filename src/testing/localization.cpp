@@ -4,6 +4,19 @@
 
 using namespace mpclib;
 
+static inline std::vector<std::string> split(const std::string& str, char delimiter) {
+    std::vector<std::string> tokens;
+    size_t start = 0;
+    size_t end = str.find(delimiter);
+    while (end != std::string::npos) {
+        tokens.push_back(str.substr(start, end - start));
+        start = end + 1;
+        end = str.find(delimiter, start);
+    }
+    tokens.push_back(str.substr(start, end));
+    return tokens;
+}
+
 SimulatedLocalizer::SimulatedLocalizer(float x, float y, float theta, float vl, float vr)
     : x_(x), y_(y), theta_(theta), vl_(vl), vr_(vr) 
 {
@@ -11,7 +24,14 @@ SimulatedLocalizer::SimulatedLocalizer(float x, float y, float theta, float vl, 
         SimulatedLocalizer* localizer = static_cast<SimulatedLocalizer*>(self);
         while (true) {
             float tx, ty, ttheta, tvl, tvr;
-            std::cin >> tx >> ty >> ttheta >> tvl >> tvr;
+            std::string line;
+            std::getline(std::cin, line);
+            auto tokens = split(line, ' ');
+            tx = std::stof(tokens[0]);
+            ty = std::stof(tokens[1]);
+            ttheta = std::stof(tokens[2]);
+            tvl = std::stof(tokens[3]);
+            tvr = std::stof(tokens[4]);
 
             {
                 auto x_lock = localizer->x_.lock();

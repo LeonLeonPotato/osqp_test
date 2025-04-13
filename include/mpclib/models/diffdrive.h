@@ -10,7 +10,7 @@ public:
     struct Params : BaseParams {
         float width; // Drivetrain width; the distance between the left and right drivetrains, in cm. Must be positive.
         float max_speed; // Maximum (absolute value) speed of one side of the drivetrain on the robot, in cm / s. Must be positive.
-        float acceleration_constant; // How fast robot accelerates, in s ^ -1. Larger -> faster acceleration. Must be positive.
+        float acceleration_constant; // How fast robot accelerates, in seconds. Larger -> faster acceleration. Must be positive.
     };
 
     DifferentialDriveModel(const Params& params);

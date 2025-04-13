@@ -13,7 +13,9 @@ class Localization {
         virtual float vl() = 0;
         virtual float vr() = 0;
         Vec get_state(void) {
-            return Vec(5);
+            Vec state(5);
+            state << x(), y(), theta(), vl(), vr();
+            return state;
         }
         std::string to_string() {
             char buffer[4096] = {0};

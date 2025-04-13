@@ -125,6 +125,9 @@ void OCPQP::setup_dimensions() {
         state_bounds, action_bounds, general_bounds,
         soft_bounds, soft_bounds, soft_bounds,
         &dim);
+
+    // Set equality
+    s_ocp_qp_dim_set_nbxe(0, model.state_size(), &dim);
 }
 
 void OCPQP::setup_constraints() {
@@ -212,6 +215,7 @@ void OCPQP::setup_constraints() {
     s_ocp_qp_set_lbx_mask(0, initial_state_constraint_mask, &qp);
     s_ocp_qp_set_ubx_mask(0, initial_state_constraint_mask, &qp);
     s_ocp_qp_set_idxbx(0, initial_state_constraint_index, &qp);
+    s_ocp_qp_set_idxbxe(0, initial_state_constraint_index, &qp);
 
     std::cout << "x0 mask: "; print_arr(initial_state_constraint_mask, model.state_size());
     std::cout << "x0 index: "; print_arr(initial_state_constraint_index, model.state_size());
@@ -228,8 +232,8 @@ void OCPQP::setup_costs() {
 
     // Penalize every state from [1, N-1]
     for (int i = 1; i < ocp_params.N; i++) {
-        s_ocp_qp_set_Q(i, const_cast<float*>(ocp_params.Q.data()), &qp);
-        s_ocp_qp_set_R(i, const_cast<float*>(ocp_params.R.data()), &qp);
+        s_ocp_qp_set_Q(i, const_cast<float*>((ocp_params.Q).eval().data()), &qp);
+        s_ocp_qp_set_R(i-1, const_cast<float*>(ocp_params.R.data()), &qp);
         s_ocp_qp_set_S(i, zeros.data(), &qp); // No action-state correlation cost
         s_ocp_qp_set_q(i, zeros.data(), &qp); // No linear state cost (Implicitly makes the optimal state equal to the zero vector)
         s_ocp_qp_set_r(i, zeros.data(), &qp); // No linear action cost
@@ -294,19 +298,51 @@ void OCPQP::relinearize(Vec x, const std::vector<Vec>& u) {
 }
 
 void OCPQP::relinearize(const std::vector<Vec>& x, const std::vector<Vec>& u) {
-    throw new std::invalid_argument("Not implemented yet");
+    Mat jx, ju;
+    Vec c;
+
+    for (int i = 0; i < std::min(x.size(), u.size()); i++) {
+        ADVec fout;
+        ADVec ad_x = x[i].cast<autodiff::real>();
+        ADVec ad_u = u[i].cast<autodiff::real>();
+        jx = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_x), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
+        ju = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_u), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
+        c = fout.cast<float>() - (jx * x[i]) - (ju * u[i]);
+
+        s_ocp_qp_set_A(i, jx.data(), &qp);
+        s_ocp_qp_set_B(i, ju.data(), &qp);
+        s_ocp_qp_set_b(i, c.data(), &qp);
+    }
+
+    for (int i = u.size(); i < ocp_params.N; i++) {
+        s_ocp_qp_set_A(i, jx.data(), &qp);
+        s_ocp_qp_set_B(i, ju.data(), &qp);
+        s_ocp_qp_set_b(i, c.data(), &qp);
+    }
 }
 
 void OCPQP::set_target_state(const Vec& x_desired) {
-    assert(x_desired.size() == model.state_size());
-    assert(ocp_params.Q.cols() == x_desired.size());
-
     Vec q_cost = -ocp_params.Q * x_desired;
     for (int i = 1; i < ocp_params.N; i++) {
         s_ocp_qp_set_q(i, q_cost.data(), &qp);
     }
 
     Vec qf_cost = -ocp_params.Qf * x_desired;
+    s_ocp_qp_set_q(ocp_params.N, qf_cost.data(), &qp);
+}
+
+void OCPQP::set_target_state(const std::vector<Vec>& x_desired) {
+    if (x_desired.size() != ocp_params.N) {
+        throw std::invalid_argument("x_desired size must match the number of timesteps (N)");
+    }
+
+    Vec q_cost(model.state_size());
+    for (int i = 1; i < ocp_params.N; i++) {
+        q_cost << -ocp_params.Q * x_desired[i-1];
+        s_ocp_qp_set_q(i, q_cost.data(), &qp);
+    }
+
+    Vec qf_cost = -ocp_params.Qf * x_desired[ocp_params.N-1];
     s_ocp_qp_set_q(ocp_params.N, qf_cost.data(), &qp);
 }
 
