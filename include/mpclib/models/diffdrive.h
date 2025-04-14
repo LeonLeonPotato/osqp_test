@@ -16,7 +16,7 @@ public:
     DifferentialDriveModel(const Params& params);
 
     ADVec autodiff(const ADVec& x, const ADVec& u) const override;
-    Vec infer(const Vec& x, const Vec& u) const override;
+    Vec infer(const Vec& x, const Vec& u, float dt_override = -1) const override;
 
     const Params& params() const { return params_; }
     void set_params(const Params& params) { params_ = params; resync_from_params(); }

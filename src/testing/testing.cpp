@@ -11,9 +11,34 @@
 #include "pros/rtos.hpp"
 #include "Eigen/Geometry"
 #include <algorithm>
+#include <vector>
 #include "autodiff/forward/dual.hpp"
 
 using namespace mpclib;
+
+static SimulatedActuator actuator;
+static SimulatedLocalizer localizer;
+
+static void print_vectors(const std::vector<Vec>& vecs) {
+    static constexpr int vec_printing_buff_size = 1 << 12;
+    static char* vec_printing_buff = new char[vec_printing_buff_size];
+
+    int pos = snprintf(vec_printing_buff, vec_printing_buff_size, "P = [");
+    for (int i = 0; i < vecs.size(); ++i) {
+        pos += snprintf(vec_printing_buff + pos, vec_printing_buff_size - pos, "(");
+        for (int j = 0; j < vecs[i].size(); ++j) {
+            pos += snprintf(vec_printing_buff + pos, vec_printing_buff_size - pos, "%.3f", vecs[i][j]);
+            if (j != vecs[i].size() - 1) {
+                pos += snprintf(vec_printing_buff + pos, vec_printing_buff_size - pos, ", ");
+            }
+        }
+        pos += snprintf(vec_printing_buff + pos, vec_printing_buff_size - pos, ")");
+        if (i != vecs.size() - 1) pos += snprintf(vec_printing_buff + pos, vec_printing_buff_size - pos, ", ");
+    }
+    pos += snprintf(vec_printing_buff + pos, vec_printing_buff_size - pos, "]");
+    vec_printing_buff[pos] = '\0';
+    printf("%s\n", vec_printing_buff);
+}
 
 class PID {
 public:
@@ -36,7 +61,7 @@ public:
 
         float error = setpoint - measured_value;
         integral_ += error * dt;
-        float derivative = prev_time_ == -1 ? 0 : (error - prev_error_) / dt;
+        float derivative = (prev_time_ == -1) ? 0 : ((error - prev_error_) / dt);
         prev_error_ = error;
         prev_time_ = pros::micros();
 
@@ -209,16 +234,13 @@ void test_ocp_qp() {
 }
 
 static Vec get_target_at_time(float time) {
-    static Mat x_coeffs(4, 4);
-    static Mat y_coeffs(4, 4);
+    static Mat x_coeffs(3, 4);
+    static Mat y_coeffs(3, 4);
     static std::vector<float> arc_lengths;
     static bool initialized = false;
 
-    static float nodes[20] = {-0.9931286 , -0.96397193, -0.91223443, -0.83911697, -0.74633191, -0.63605368, -0.510867  , -0.37370609, -0.22778585, -0.07652652,         0.07652652,  0.22778585,  0.37370609,  0.510867  ,  0.63605368,         0.74633191,  0.83911697,  0.91223443,  0.96397193,  0.9931286 };
-    static float weights[20] = {0.01761401, 0.04060143, 0.06267205, 0.08327674, 0.10193012,
-       0.11819453, 0.13168864, 0.14209611, 0.14917299, 0.15275339,
-       0.15275339, 0.14917299, 0.14209611, 0.13168864, 0.11819453,
-       0.10193012, 0.08327674, 0.06267205, 0.04060143, 0.01761401};
+    static float nodes[5] = {-0.90617985, -0.53846931,  0.000000000,  0.53846931,  0.90617985};
+    static float weights[5] = {0.23692689, 0.47862867, 0.56888889, 0.47862867, 0.23692689};
     
     auto compute = [](auto t) {
         int interval = static_cast<int>(std::floor(static_cast<float>(t)));
@@ -257,16 +279,17 @@ static Vec get_target_at_time(float time) {
         return Eigen::Vector<float, 2> {dx, dy};
     };
 
-    auto arc_length_to_parameter = [&compute, &derivative](float s) {
+    // Find path parameter t such that arc_length(t) = s
+    auto inverse_arc_length = [&compute, &derivative](float s) {
         float guess = (float) (std::lower_bound(arc_lengths.begin(), arc_lengths.end(), s) - arc_lengths.begin());
         guess = (guess / arc_lengths.size()) * x_coeffs.rows();
 
         float check = 0;
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 5; i++) {
             float f = derivative(guess * (1 + nodes[i]) / 2).norm();
             check += weights[i] * f;
         }
-        check *= (guess * 0.5f);
+        check *= guess * 0.5f;
 
         auto deriv = derivative(guess).norm();
         if (deriv != 0)
@@ -277,7 +300,7 @@ static Vec get_target_at_time(float time) {
 
     auto arc_length = [&derivative](float t) {
         float check = 0;
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 5; i++) {
             float f = derivative(t * (1 + nodes[i]) / 2).norm();
             check += weights[i] * f;
         }
@@ -289,14 +312,12 @@ static Vec get_target_at_time(float time) {
         x_coeffs << 
             -99.8,     0.3214285714285552,0.0,49.178571428571445,
             -50.3,   147.8571428571429,147.53571428571425,-132.09285714285713,
-            113.0,   46.65,-248.74285714285716,136.09285714285716,
-            47.0,    -42.55714285714285,159.53571428571428,-53.17857142857143;
+            113.0,   46.65,-248.74285714285716,136.09285714285716;
 
         y_coeffs <<
             -124.5,  278.203571, 2.84217e-14, -98.103571,
             55.6,   -16.107143, -294.310714, 156.417857,
-            -98.4, -135.475000, 174.942857,  -22.067857,
-            -81.0,  148.207143, 108.739286,  -36.246429;
+            -98.4, -135.475000, 174.942857,  -22.067857;
 
         int segments = 1 << 8;
         arc_lengths.reserve(1 + x_coeffs.rows() * segments);
@@ -316,41 +337,48 @@ static Vec get_target_at_time(float time) {
         initialized = true;
     }
 
-    float speed = 75.0f;
+    float speed = 70.0f;
     float total_s = arc_length(static_cast<float>(x_coeffs.rows()));
-    time = modfix(time, total_s / speed + 5);
+    time = modfix(time, total_s / speed + 2*5);
     time -= 5;
     float s = time * speed;
-    time = arc_length_to_parameter(s);
+    time = inverse_arc_length(s);
     time = std::clamp(time, 0.0f, static_cast<float>(x_coeffs.rows()));
 
-    return (Vec(5) << compute(time), 0, 0, 0).finished(); // or Vector2f{x, y} depending on what `Vec` is
+    auto deriv_h = derivative(time - 1e-1f);
+    auto deriv = derivative(time);
+    float angle_h = atan2f(deriv_h[1], deriv_h[0]);
+    float angle = atan2f(deriv[1], deriv[0]);
+    if (angle_h > 0 && angle < 0) angle += M_PI * 2;
+    else if (angle_h < 0 && angle > 0) angle -= M_PI * 2;
+    return (Vec(5) << compute(time), angle, 0, 0).finished(); // or Vector2f{x, y} depending on what `Vec` is
 }
 
 void test_in_sim() {
-    DifferentialDriveModel::Params model_params;
     float gain = 13.6; float kf = 0.7;
-    model_params.dt = 0.1f;
-    model_params.width = 35.87f;
+
+    DifferentialDriveModel::Params model_params;
+    model_params.dt = 0.04f;
+    model_params.width = 33.87f;
     model_params.max_speed = (gain - kf) * 12.0f;
-    model_params.acceleration_constant = 0.1404f;
+    model_params.acceleration_constant = 5.39002f;
     DifferentialDriveModel model(model_params);
 
-    float time_target = 7.5; // ms
+    float time_target = 10; // ms
     OCPParams ocp_params;
     ocp_params.N = 30;
-    ocp_params.Q = (Eigen::Vector<float, 5> {1, 1, 0, 0.000, 0.00}).asDiagonal();
-    ocp_params.Qf = (Eigen::Vector<float, 5> {10, 10, 0, 0.000, 0.00}).asDiagonal();
-    ocp_params.R = Mat::Identity(2, 2) * 0.000;
-    ocp_params.Rf = Mat::Identity(2, 2) * 0.00;
-    ocp_params.warm_start_level = OCPParams::WarmStartLevel::STATE_AND_INPUT;
+    ocp_params.Q1 = (Eigen::Vector<float, 5> {10, 10, 1000, 0.007, 0.007}).asDiagonal();
+    ocp_params.Q = (Eigen::Vector<float, 5> {1, 1, 500, 0.002, 0.002}).asDiagonal();
+    ocp_params.Qf = (Eigen::Vector<float, 5> {5, 5, 0, 0.02, 0.02}).asDiagonal();
+    ocp_params.R0 = Mat::Identity(2, 2) * 0.017;
+    ocp_params.R = Mat::Identity(2, 2) * 0.002;
+    ocp_params.Rf = Mat::Identity(2, 2) * 0.002;
+    ocp_params.warm_start_level = OCPParams::WarmStartLevel::STATE;
     ocp_params.iterations = (int) std::round(time_target / (2.500000e-02 * ocp_params.N));
     OCPQP ocpqp(model, ocp_params);
 
-    SimulatedActuator actuator;
-    SimulatedLocalizer localizer;
-    MotorController left_controller(1.2, 0.3, 0.00, 1 / gain, kf, 0.025);
-    MotorController right_controller(1.2, 0.3, 0.00, 1 / gain, kf, 0.025);
+    MotorController left_controller(0.4, 0.0, 0.005, 0.0734292, 0.71082, 0.0191517541031);
+    MotorController right_controller(0.4, 0.0, 0.005, 0.0734292, 0.71082, 0.0191517541031);
 
     std::vector<Vec> targets;
     targets.reserve(ocp_params.N);
@@ -360,19 +388,22 @@ void test_in_sim() {
 
     while (true) {
         uint32_t loop_start_time = pros::millis();
+        uint64_t loop_start_time_hf = pros::c::micros();
         x_nom = localizer.get_state();
 
         if (targets.size() != 0) {
             float error = sqrtf(powf(x_nom[0] - targets[0][0], 2) + powf(x_nom[1] - targets[0][1], 2));
-            printf("Error: %.3f     Target: [%.3f, %.3f]\n", error, targets[0][0], targets[0][1]);
+            printf("Error: %.3f     Target: [%.3f, %.3f, %.3f]\n", error, targets[0][0], targets[0][1], targets[0][2]);
             printf("[RENDER] %.4f %.4f %f\n", targets[0][0], targets[0][1], 10.0);
         }
 
         targets.clear();
         float cur_time = pros::micros() * 1e-6f;
         for (int i = 1; i <= ocp_params.N; i++) {
-            targets.push_back(get_target_at_time(cur_time + model_params.dt * i));
+            targets.push_back(get_target_at_time(cur_time + model_params.dt*i + time_target*1e-3));
         }
+
+        x_nom = model.infer(x_nom, u_nom, time_target * 1e-3);
 
         ocpqp.set_initial_state(x_nom);
         ocpqp.relinearize(x_nom, u_nom);
@@ -385,22 +416,27 @@ void test_in_sim() {
         for (int i = 0; i < pred_states.size(); i++) {
             pred_states[i].resize(model.state_size());
             s_ocp_qp_sol_get_x(i+1, &ocpqp.qp_sol, pred_states[i].data());
+            if (pred_states[i].hasNaN()) pred_states[i].setZero();
+            s_ocp_qp_sol_set_x(i, pred_states[i].data(), &ocpqp.qp_sol);
         }
 
         std::vector<Vec> pred_actions(ocp_params.N); 
         for (int i = 0; i < pred_actions.size(); i++) {
             pred_actions[i].resize(model.action_size());
             s_ocp_qp_sol_get_u(i, &ocpqp.qp_sol, pred_actions[i].data());
+            if (pred_actions[i].hasNaN()) pred_actions[i].setZero();
+            s_ocp_qp_sol_set_u(std::max(0, i-1), pred_actions[i].data(), &ocpqp.qp_sol);
         }
-
         // int lin_stage = ocp_params.N / 2;
         int lin_stage = 0;
-        ocpqp.relinearize(pred_states[lin_stage], pred_actions[lin_stage]);
+        // ocpqp.relinearize(pred_states[lin_stage], pred_actions[lin_stage]);
         // ocpqp.relinearize(pred_states, pred_actions);
 
         Vec nxt_x(5);
-        nxt_x = model.infer(x_nom, pred_actions[0]);
-        nxt_x = 0.75 * nxt_x + 0.25 * model.infer(nxt_x, pred_actions[1]);
+        // nxt_x = ff.infer(x_nom, pred_actions[0]);
+        // nxt_x = 0.75 * nxt_x + 0.25 * model.infer(nxt_x, pred_actions[1]);
+        u_nom = pred_actions[0];
+        s_ocp_qp_sol_get_x(1, &ocpqp.qp_sol, nxt_x.data());
 
         actuator.volt(left_controller.calculate_voltage(x_nom[3], nxt_x[3], u_nom[0]), 
                     right_controller.calculate_voltage(x_nom[4], nxt_x[4], u_nom[1]));
@@ -413,19 +449,77 @@ void test_in_sim() {
         sprintf(buff + pos, "\n");
         std::cout << buff;
 
-        u_nom = pred_actions[0];
+        u_nom = pred_actions[1];
 
-        pros::c::task_delay_until(&loop_start_time, 10);
+        if ((pros::micros() - loop_start_time_hf) * 1e-3f > time_target + 5) {
+            printf("WARNING: Loop time exceeded %d ms\n", (int) time_target + 5);
+        }
+
+        pros::c::task_delay_until(&loop_start_time, time_target + 5);
     }
 }
 
 void find_center() {
-    SimulatedLocalizer localizer;
-    SimulatedActuator actuator;
     actuator.volt(-12, 12);
     while (true) {
         auto x = localizer.get_state();
         printf("x: [%.3f, %.3f, %.3f]\n", x[0], x[1], x[2]);
         pros::c::task_delay(10);
     }
+}
+
+void motor_constants() {
+    int stage = 8;
+    actuator.volt(stage / 10.0f * 12, stage / 10.0f * 12);
+    std::vector<Vec> positions;
+
+    auto start = pros::micros();
+    auto last_t = start;
+    float last_x = localizer.get_state()[0];
+    pros::delay(20);
+    for (int i = 0; i < 50; i++) {
+        auto x = localizer.x();
+        auto t = (pros::micros() - start) * 1e-6f;
+        auto dt = (pros::micros() - last_t) * 1e-6f;
+        auto dx = x - last_x;
+        last_x = x;
+        last_t = pros::micros();
+        positions.push_back((Vec(2) << t, (dx/dt)).finished());
+        pros::delay(20);
+    }
+
+    print_vectors(positions);
+
+    while (true) pros::delay(50);
+}
+
+void test_motor_constants() {
+    MotorController left_controller(0.4, 0.0, 0.004, 0.0734292, 0.71082, 0.0191517541031);
+    MotorController right_controller(0.4, 0.0, 0.004, 0.0734292, 0.71082, 0.0191517541031);
+
+    float test_velo = 100;
+
+    std::vector<Vec> positions;
+    positions.reserve(100);
+    for (int i = 0; i < 100;) {
+        auto t = i * 0.1f;
+        float vl = localizer.vl();
+        float vr = localizer.vr();
+        actuator.volt(
+            left_controller.calculate_voltage(vl, test_velo),
+            right_controller.calculate_voltage(vr, test_velo)
+        );
+        
+        if ((fabsf(vl) + fabsf(vr)) < 2.5f) {
+            pros::delay(10);
+            continue;
+        } else i++;
+
+        positions.push_back((Vec(2) << t, vl).finished());
+        pros::delay(10);
+    }
+
+    print_vectors(positions);
+
+    while (true) pros::delay(50);
 }

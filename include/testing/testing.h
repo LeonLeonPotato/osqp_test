@@ -4,3 +4,5 @@ void test_model();
 void test_ocp_qp();
 void test_in_sim();
 void find_center();
+void motor_constants();
+void test_motor_constants();

@@ -19,7 +19,7 @@ public:
     virtual constexpr int action_size() const = 0;
 
     virtual ADVec autodiff(const ADVec& x, const ADVec& u) const = 0;
-    virtual Vec infer(const Vec& x, const Vec& u) const = 0;
+    virtual Vec infer(const Vec& x, const Vec& u, float dt_override) const = 0;
 
     virtual const std::vector<Constraint>& state_constraints() const { return state_constraints_; }
     virtual const std::vector<Constraint>& action_constraints() const { return action_constraints_; }

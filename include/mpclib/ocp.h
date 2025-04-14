@@ -10,8 +10,8 @@
 namespace mpclib {
 struct OCPParams {
     int N;
-    Mat Q, Qf;
-    Mat R, Rf;
+    Mat Q1, Q, Qf;
+    Mat R0, R, Rf;
 
     enum class WarmStartLevel {
         NONE = 0,

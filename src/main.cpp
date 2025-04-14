@@ -41,9 +41,12 @@ static void driver_test() {
 
 void opcontrol() {
 	printf("[RESET]\n");
+	pros::delay(200);
 
 	// test_model();
 	// test_ocp_qp();
 	test_in_sim();
 	// find_center();
+	// motor_constants();
+	// test_motor_constants();
 }

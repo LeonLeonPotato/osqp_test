@@ -224,12 +224,6 @@ void OCPQP::setup_constraints() {
 void OCPQP::setup_costs() {
     Mat zeros = Mat::Zero(model.state_size(), model.state_size());
 
-    // Prevent penalizing the initial state
-    s_ocp_qp_set_Q(0, zeros.data(), &qp);
-    s_ocp_qp_set_S(0, zeros.data(), &qp);
-    s_ocp_qp_set_q(0, zeros.data(), &qp);
-    s_ocp_qp_set_r(0, zeros.data(), &qp);
-
     // Penalize every state from [1, N-1]
     for (int i = 1; i < ocp_params.N; i++) {
         s_ocp_qp_set_Q(i, const_cast<float*>((ocp_params.Q).eval().data()), &qp);
@@ -245,6 +239,10 @@ void OCPQP::setup_costs() {
     s_ocp_qp_set_S(ocp_params.N, zeros.data(), &qp);
     s_ocp_qp_set_q(ocp_params.N, zeros.data(), &qp);
     s_ocp_qp_set_r(ocp_params.N, zeros.data(), &qp);
+
+    // Initial state penalty
+    s_ocp_qp_set_Q(1, const_cast<float*>(ocp_params.Q1.data()), &qp);
+    s_ocp_qp_set_R(0, const_cast<float*>(ocp_params.R0.data()), &qp);
 }
 
 void OCPQP::set_initial_state(const Vec& x) {
@@ -337,13 +335,16 @@ void OCPQP::set_target_state(const std::vector<Vec>& x_desired) {
     }
 
     Vec q_cost(model.state_size());
-    for (int i = 1; i < ocp_params.N; i++) {
+    for (int i = 2; i < ocp_params.N; i++) {
         q_cost << -ocp_params.Q * x_desired[i-1];
         s_ocp_qp_set_q(i, q_cost.data(), &qp);
     }
 
-    Vec qf_cost = -ocp_params.Qf * x_desired[ocp_params.N-1];
-    s_ocp_qp_set_q(ocp_params.N, qf_cost.data(), &qp);
+    q_cost << -ocp_params.Qf * x_desired[ocp_params.N-1];
+    s_ocp_qp_set_q(ocp_params.N, q_cost.data(), &qp);
+
+    q_cost << -ocp_params.Q1 * x_desired[0];
+    s_ocp_qp_set_q(1, q_cost.data(), &qp);
 }
 
 int OCPQP::solve(bool silent) {
