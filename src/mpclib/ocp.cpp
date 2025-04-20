@@ -410,16 +410,20 @@ void OCPQP::set_target_state(const std::vector<Vec>& x_desired) {
     }
 
     Vec q_cost(model.state_size());
+
+    // Initial cost
+    q_cost << -ocp_params.Q1 * x_desired[0];
+    s_ocp_qp_set_q(1, q_cost.data(), &qp);
+
+    // Intermediate costs
     for (int i = 2; i < ocp_params.N; i++) {
         q_cost << -ocp_params.Q * x_desired[i-1];
         s_ocp_qp_set_q(i, q_cost.data(), &qp);
     }
 
+    // Final cost
     q_cost << -ocp_params.Qf * x_desired[ocp_params.N-1];
     s_ocp_qp_set_q(ocp_params.N, q_cost.data(), &qp);
-
-    q_cost << -ocp_params.Q1 * x_desired[0];
-    s_ocp_qp_set_q(1, q_cost.data(), &qp);
 }
 
 int OCPQP::solve(bool silent) {

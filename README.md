@@ -19,6 +19,13 @@ For example, a differential drive robot (like a standard VEX chassis with two dr
 can only move forward/backward and rotate. This restriction is non-integrable, meaning it cannot be expressed purely as constraints on position,
 but rather on the velocities of the system.
 
+## Documentation
+
+The project is fully documented with `doxygen`. To generate HTML documentation, run `doxygen Doxyfile` in the project's base path.
+Then, go to `docs/html/index.html` to get to the docs.
+
+Online-hosted documentation will come later.
+
 ## Formulation
 
 This library uses [HPIPM](https://github.com/giaf/hpipm) as its core solver and [BLASFEO](https://github.com/giaf/blasfeo) as its backend BLAS library.

@@ -1,6 +1,7 @@
 /** 
- * @file mpclib_utils.hpp
- * @brief Common types and mathematical helper functions for Model Predictive Control (MPC)
+ * @file utils.h
+ * @author Leon
+ * @brief Common types and mathematical helper functions for MPC
  * 
  * @details
  * This header gathers frequently‑used type aliases (dense, sparse, and automatic‑differentiation
@@ -15,13 +16,13 @@
 #include "autodiff/forward/real/eigen.hpp"
 
 namespace mpclib {
-// Column vector for autodiff. Internal autodiff types are used
+/// Column vector for autodiff. Internal autodiff types are used
 using ADVec = autodiff::VectorXreal;
-// Column vector for Eigen, floating point is used
+/// Column vector for Eigen, floating point is used
 using Vec =  Eigen::VectorX<float>;
-// Dense matrix for autodiff. floating point is used
+/// Dense matrix for autodiff. floating point is used
 using Mat = Eigen::MatrixX<float>;
-// Sparse Matrix for Eigen, floating point is used
+/// Sparse Matrix for Eigen, floating point is used
 using SPMat = Eigen::SparseMatrix<float>;
 
 /**
@@ -32,7 +33,7 @@ using SPMat = Eigen::SparseMatrix<float>;
  * For \f$ |x| < 10^{-3} \f$ a 4th‑order Taylor series approximation is returned
  * to avoid catastrophic cancellation:
  * \f[
- *     \mathrm{sinc}(x) \approx 1 - \frac{x^{2}}{6} + \frac{x^{4}}{120}.
+ *     \mathrm{sinc}(x) \approx 1 - \frac{x^{2}}{6}.
  * \f]
  *
  * @tparam T Arithmetic type (integral or floating point).
@@ -41,7 +42,7 @@ using SPMat = Eigen::SparseMatrix<float>;
  */
 template <typename T, typename = std::enable_if_t<std::is_arithmetic<T>::value>>
 static inline T sinc(T x) {
-    if (std::abs(x) < 1e-3) return 1 - (x*x/6.0f) + (x*x*x*x/120.0f);
+    if (std::abs(x) < 1e-3f) return 1.0f - (x*x/6.0f);
     return std::sin(x) / x;
 }
 
@@ -86,16 +87,16 @@ static inline float modfix(float x, float y) {
 }
 
 /**
- * @brief Autodiff‑compatible @c sinc using forward‑mode @c autodiff::real.
+ * @brief Autodiff‑compatible @ref sinc using forward‑mode @c autodiff::real
  *
- * Identical definition to @ref sinc but operates on @c autodiff::real
+ * Identical definition to @ref sinc but operates on @c autodiff::real 
  * so that derivatives are propagated automatically.
  *
- * @param x Input value (autodiff::real).
+ * @param x Input value
  * @return \f$ \mathrm{sinc}(x) \f$ with autodiff support.
  */
 static inline auto ad_sinc(autodiff::real x) {
-    if (abs(x) < 1e-3) return autodiff::real(1) - (x*x/6.0f) + (x*x*x*x/120.0f);
+    if (abs(x) < 1e-3) return autodiff::real(1.0) - (x*x/6.0);
     return sin(x) / x;
 }
 }
