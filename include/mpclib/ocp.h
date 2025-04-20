@@ -1,3 +1,13 @@
+/**
+ * @file ocp.h
+ * @brief Wrapper class of the Optimal Control Problem Quadratic Programming (OCP-QP) solver using HPIPM.
+ *
+ * This file defines the structures and methods for solving optimal control problems
+ * using the HPIPM library. It includes the definition of OCP parameters, the OCPQP
+ * class for managing the problem setup, and methods for relinearization, setting
+ * targets, and solving the problem.
+ */
+
 #pragma once
 
 #include "models/base_model.h"

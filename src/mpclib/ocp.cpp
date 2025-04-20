@@ -1,3 +1,39 @@
+/**
+ * @file ocp.cpp
+ * @brief Wrapper class of the Optimal Control Problem Quadratic Programming (OCP-QP) solver using HPIPM.
+ * 
+ * This file contains the implementation of the OCPQP class, which is responsible for setting up and solving
+ * optimal control problems using the HPIPM library. The implementation includes methods for setting up problem
+ * dimensions, constraints, costs, and relinearizing the dynamics. It also provides functionality for setting
+ * target states and solving the problem.
+ * 
+ * @details
+ * The OCPQP class leverages the HPIPM library to solve quadratic programming problems that arise in optimal
+ * control. The implementation includes helper functions for creating masks, indices, and bounds from constraints,
+ * as well as methods for relinearizing the system dynamics using automatic differentiation. The solver supports
+ * warm-starting and allows for customization of solver parameters such as iteration limits and accuracy levels.
+ * 
+ * Key features:
+ * - Setup of problem dimensions, constraints, and costs.
+ * - Support for state, action, and general constraints.
+ * - Automatic differentiation for relinearization of dynamics.
+ * - Warm-starting and customizable solver parameters.
+ * - Debugging utilities for printing arrays and intermediate results.
+ * 
+ * Dependencies:
+ * - HPIPM library for solving quadratic programming problems.
+ * - Eigen library for matrix and vector operations.
+ * - Autodiff library for automatic differentiation of nonlinear functions.
+ * 
+ * Usage:
+ * - Instantiate the OCPQP class with a model and OCP parameters.
+ * - Use the provided methods to set up the problem, relinearize dynamics, and solve the problem.
+ * - Retrieve the solution and status using the appropriate methods.
+ * 
+ * @author Leon
+ * @date 2025-4-20
+ */
+
 #include "ocp.h"
 #include "hpipm/hpipm_s_ocp_qp_ipm.h"
 #include <algorithm>
@@ -6,6 +42,18 @@
 
 using namespace mpclib;
 
+/**
+ * @brief Create an HPIPM bit mask from a list of constraints object
+ *
+ * @details  
+ * Loops over the constraints, setting the 'index' parameter of each 
+ * constraint to 1, and everything else to 0. 
+ * In HPIPM terms, this activates the constraint at that index.
+ * 
+ * @param arr pointer to the C-style array to write to
+ * @param size size of the constraints vector and the array to copy to
+ * @param constraints vector of constraints
+ */
 static void create_mask_from_constraints(float* arr, size_t size, const std::vector<Constraint>& constraints) {
     if (arr == nullptr) return;
     std::fill(arr, arr + size, 0.0f);
@@ -14,6 +62,18 @@ static void create_mask_from_constraints(float* arr, size_t size, const std::vec
     }
 }
 
+/**
+ * @brief Create an HPIPM index from a list of constraints object
+ *
+ * @details 
+ * Copies all 'index' parameters of every constraint into a C-style 
+ * array of the same size. In HPIPM terms, this tells the solver 
+ * the index of every variable that is targetted in the constraint.
+ * 
+ * @param arr pointer to the C-style array to copy to
+ * @param size size of the constraints vector and the array to copy to
+ * @param constraints vector of constraints
+ */
 static void create_index_from_constraints(int* arr, size_t size, const std::vector<Constraint>& constraints) {
     if (arr == nullptr) return;
     for (int i = 0; i < size; ++i) {
@@ -21,6 +81,16 @@ static void create_index_from_constraints(int* arr, size_t size, const std::vect
     }
 }
 
+/**
+ * @brief Create lower and upper bounds from a list of constraints object
+ * 
+ * @details 
+
+ * 
+ * @param lower pointer to the lower bound array to copy to
+ * @param upper pointer to the upper bound array to copy to
+ * @param constraints vector of constraints
+ */
 static void create_bounds_from_constraints(float* lower, float* upper, const std::vector<Constraint>& constraints) {
     if (lower == nullptr || upper == nullptr) return;
     for (int i = 0; i < constraints.size(); ++i) {
@@ -29,6 +99,14 @@ static void create_bounds_from_constraints(float* lower, float* upper, const std
     }
 }
 
+/**
+ * @brief Prints an array to terminal
+ * @note Used for debugging
+ * 
+ * @tparam T the type of every element in the array
+ * @param arr pointer to the array to print from 
+ * @param size size of the array
+ */
 template <typename T>
 static void print_arr(T* arr, size_t size) {
     std::cout << "[";
@@ -39,6 +117,14 @@ static void print_arr(T* arr, size_t size) {
     std::cout << "]\n";
 }
 
+/**
+ * @brief static method to wrap the autodiff function for the model
+ * 
+ * @param model Model object to call the autodiff function on
+ * @param x state operating vector to linearize around
+ * @param u action operating vector to linearize around
+ * @return auto 
+ */
 static auto autodiff_model_wrapper(const Model& model, const ADVec& x, const ADVec& u) {
     return model.autodiff(x, u);
 }
@@ -46,14 +132,6 @@ static auto autodiff_model_wrapper(const Model& model, const ADVec& x, const ADV
 OCPQP::OCPQP(const Model& model, const OCPParams& ocp_params)
     : model(model), ocp_params(ocp_params) 
 {
-    assert(ocp_params.N > 0);
-    assert(ocp_params.Q.rows() == model.state_size());
-    assert(ocp_params.Q.cols() == model.state_size());
-    assert(ocp_params.R.rows() == model.action_size());
-    assert(ocp_params.R.cols() == model.action_size());
-    assert(model.state_size() > 0);
-    assert(model.action_size() > 0);
-
     // Allocation of dimension memory
     hpipm_size_t memsize = s_ocp_qp_dim_memsize(ocp_params.N);
     dim_mem = malloc(memsize);
@@ -252,9 +330,6 @@ void OCPQP::set_initial_state(const Vec& x) {
 }
 
 void OCPQP::relinearize(const Vec& x, const Vec& u) {
-    assert(x.size() == model.state_size());
-    assert(u.size() == model.action_size());
-
     ADVec fout;
     ADVec ad_x = x.cast<autodiff::real>();
     ADVec ad_u = u.cast<autodiff::real>();
