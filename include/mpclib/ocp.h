@@ -32,13 +32,13 @@ namespace mpclib {
 struct OCPParams {
     int N; ///< Number of time steps in the OCP problem. This means there are N actions & N states to predict excluding the initial state.
 
-    Mat Q1; ///< State cost for stage 1 (\f$ x_1 \f$).
-    Mat Q;  ///< State cost for intermediate stages 2 … N‑1.
-    Mat Qf; ///< State cost for stage N (\f$ x_N \f$)
+    Mat Q1; ///< State cost for timestep 1 (\f$ x_1 \f$).
+    Mat Q;  ///< State cost for intermediate timesteps 2 … N‑1.
+    Mat Qf; ///< State cost for timestep N (\f$ x_N \f$)
 
-    Mat R0; ///< Action cost for stage 0 (\f$ u_0 \f$).
-    Mat R;  ///< Action cost for intermediate stages 1 … N‑2.
-    Mat Rf; ///< Action cost for stage (\f$ u_{N-1} \f$).
+    Mat R0; ///< Action cost for timestep 0 (\f$ u_0 \f$).
+    Mat R;  ///< Action cost for intermediate timesteps 1 … N‑2.
+    Mat Rf; ///< Action cost for timestep (\f$ u_{N-1} \f$).
 
     /**
      * @brief Enum defining warm start levels.
@@ -93,12 +93,20 @@ struct OCPQP {
     OCPQP(const Model& model, const OCPParams& ocp_params);
 
     /**
+     * @brief Destroy the OCPQP object
+     * 
+     * @details
+     * Deallocates all HPIPM structures and memory.
+     */
+    ~OCPQP();
+
+    /**
      * @brief Constrain the current state
      * 
      * @details
      * In HPIPM, the initial state is set as both the lower and upper bounds 
      * of the state variable. This constrains all future states, which are 
-     * states in stages from \f$ [1, N] \f$ to evolve from the initial state.
+     * states in timesteps from \f$ [1, N] \f$ to evolve from the initial state.
      * 
      * @param x Initial state vector.
      */
@@ -143,12 +151,12 @@ struct OCPQP {
      * @brief Relinearize the model dynamics from a sequence of states and actions
      * 
      * @details
-     * Similar to @ref relinearize, but this function will set the dynamics matricies at each stage
+     * Similar to @ref relinearize, but this function will set the dynamics matricies at each timestep
      * to the ones computed from the state and action pairs. Note that this differs from 
      * @ref relinearize(Vec x, const std::vector<Vec>& u) in that it does not evolve any states.
      * 
-     * @param x States to linearize around at each stage.
-     * @param u Actions to linearize around at each stage.
+     * @param x States to linearize around at each timestep.
+     * @param u Actions to linearize around at each timestep.
      *
      * @see @ref mpclib::Model::autodiff
      * @note If the size of `u` or `x` is less than `N`, the last state & action will be used to fill the rest of the dynamics matricies.
@@ -157,29 +165,132 @@ struct OCPQP {
     void relinearize(const std::vector<Vec>& x, const std::vector<Vec>& u);
 
     /**
-     * @brief Set a single target state across all N stages
+     * @brief Set a single target state across all N timesteps
      * 
      * @param x_desired Desired state vector to achieve
      */
     void set_target_state(const Vec& x_desired);
 
     /**
-     * @brief Set possibly unique target states in each stage
+     * @brief Set possibly unique target states in each timestep
      * 
      * @details
-     * At each stage \f$ i \f$ in the range \f$ [1, N] \f$, the target state is set to the \f$ i-1 \f$ element in the list.
+     * At each timestep \f$ i \f$ in the range \f$ [1, N] \f$, the target state is set to the \f$ i-1 \f$ element in the list.
      *
-     * @param x_desired List of desired states to achieve at each stage
+     * @param x_desired List of desired states to achieve at each timestep
      */
     void set_target_state(const std::vector<Vec>& x_desired);
+
+    /**
+     * @brief Set a single target input across all N timesteps
+     * 
+     * @param u_desired Desired action vector to achieve
+     */
     void set_target_input(const Vec& u_desired);
+
+    /**
+     * @brief Set possibly unique target inputs in each timestep
+     * 
+     * @param u_desired 
+     */
     void set_target_input(const std::vector<Vec>& u_desired);
 
+    /**
+     * @brief Solves the OCP problem using HPIPM.
+     * 
+     * @param silent Whether to suppress output to `cout` upon an error from the solver
+     *
+     * @return int HPIPM solver status code
+     * @see https://github.com/giaf/hpipm/blob/master/include/hpipm_common.h for return code meanings
+     */
     int solve(bool silent = true);
 
+    /**
+     * @brief Get all (timesteps \f$ [1, N] \f$) solution states from the @ref qp_sol
+     * 
+     * @return std::vector<Vec> State vectors of the solution at each timestep. The i-th element corresponds to the state at timestep i+1.
+     */
+    std::vector<Vec> get_solution_states() const;
+
+    /**
+     * @brief Get all (timesteps \f$ [0, N-1] \f$) solution actions from the @ref qp_sol
+     * 
+     * @return std::vector<Vec> Action vectors of the solution at each timestep. The i-th element corresponds to the action at timestep i.
+     */
+    std::vector<Vec> get_solution_actions() const;
+
+    /**
+     * @brief Get the solution state at a specific timestep.
+     *
+     * @note States are 1-indexed in HPIPM, so the first (non-initial) state is given at timestep 1 and the last state is at timestep N.
+     * 
+     * @param i timestep index in the range \f$ [1, N] \f$.
+     * @return Vec State vector at timestep i.
+     */
+    Vec get_solution_state(int i) const;
+
+    /**
+     * @brief Get the solution action object
+     * 
+     * @note Actions are 0-indexed in HPIPM, so the first action is 0 and the last action is N-1.
+     * @param i 
+     * @return Vec 
+     */
+    Vec get_solution_action(int i) const;
+
+    /**
+     * @brief "Push down" the solution state and actions by one timestep.
+     * 
+     * @details
+     * This function helps hot start the solver by reusing the solution from the previous timestep.
+     * When hot start solving, the previous solution was solved at a previous world time.
+     * Thus, it makes sense that the solution at timestep \f$ i \f$ in current time should be close to
+     * the solution at timestep \f$ i-1 \f$ in the previous time.
+     * 
+     * @note This function does not do anything to the state at timestep N, and the action at timestep N-1.
+     */
+    void push_down_solutions() { push_down_solution_states(); push_down_solution_actions(); }
+
+    /**
+     * @brief "Push down" the solution state by one timestep.
+     * 
+     * @details
+     * This function helps hot start the solver by reusing the solution from the previous timestep.
+     * When hot start solving, the previous solution was solved at a previous world time.
+     * Thus, it makes sense that the solution at timestep \f$ i \f$ in current time should be close to
+     * the solution at timestep \f$ i-1 \f$ in the previous time.
+     * 
+     * @note This function does not do anything to the state at timestep N
+     */
+    void push_down_solution_states();
+
+    /**
+     * @brief "Push down" the solution action by one timestep.
+     *      
+     * @details
+     * This function helps hot start the solver by reusing the solution from the previous timestep.
+     * When hot start solving, the previous solution was solved at a previous world time.
+     * Thus, it makes sense that the solution at timestep \f$ i \f$ in current time should be close to
+     * the solution at timestep \f$ i-1 \f$ in the previous time.
+     * 
+     * @note This function does not do anything to the action at timestep N-1
+     */
+    void push_down_solution_actions();
+
 private:
+    /**
+    * @brief Uses @ref ocp_params to input dimensions of the problem into HPIPM.
+    */
     void setup_dimensions();
+
+    /**
+     * @brief Uses @ref ocp_params input box & general constraints into HPIPM.
+     */
     void setup_constraints();
+
+    /**
+     * @brief Uses @ref ocp_params to input cost matricies at each timestep into HPIPM.
+     */
     void setup_costs();
 };
 }

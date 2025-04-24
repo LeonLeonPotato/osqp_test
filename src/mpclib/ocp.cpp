@@ -166,6 +166,14 @@ OCPQP::OCPQP(const Model& model, const OCPParams& ocp_params)
 	s_ocp_qp_ipm_ws_create(&dim, &ipm_arg, &workspace, ipm_mem);
 }
 
+OCPQP::~OCPQP() {
+    free(dim_mem);
+    free(qp_mem);
+    free(qp_sol_mem);
+    free(ipm_arg_mem);
+    free(ipm_mem);
+}
+
 void OCPQP::setup_dimensions() {
     // Set the dimensions of the problem
     int state_space[ocp_params.N + 1];
@@ -285,7 +293,7 @@ void OCPQP::setup_constraints() {
         }
     }
 
-    // State mask and index to constrain the initial state (stage=0) to be the current state
+    // State mask and index to constrain the initial state (timestep=0) to be the current state
     float initial_state_constraint_mask[model.state_size()];
     int initial_state_constraint_index[model.state_size()];
     std::fill_n(initial_state_constraint_mask, model.state_size(), 1.0f);
@@ -446,4 +454,52 @@ int OCPQP::solve(bool silent) {
     // MAX_ITER and MIN_STEP are not errors, just warnings
 
     return status;
+}
+
+std::vector<Vec> OCPQP::get_solution_states() const {
+    std::vector<Vec> states(ocp_params.N);
+    for (int i = 0; i < ocp_params.N; i++) {
+        states[i].resize(model.state_size());
+        s_ocp_qp_sol_get_x(i+1, const_cast<s_ocp_qp_sol*>(&qp_sol), states[i].data()); // Const cast because HPIPM API is not const-correct
+        if (states[i].hasNaN()) states[i].setZero();
+    }
+    return states;
+}
+
+std::vector<Vec> OCPQP::get_solution_actions() const {
+    std::vector<Vec> actions(ocp_params.N);
+    for (int i = 0; i < ocp_params.N; i++) {
+        actions[i].resize(model.action_size());
+        s_ocp_qp_sol_get_u(i, const_cast<s_ocp_qp_sol*>(&qp_sol), actions[i].data()); 
+        if (actions[i].hasNaN()) actions[i].setZero();
+    }
+    return actions;
+}
+
+Vec OCPQP::get_solution_state(int i) const {
+    Vec state(model.state_size());
+    s_ocp_qp_sol_get_x(i+1, const_cast<s_ocp_qp_sol*>(&qp_sol), state.data()); 
+    return state;
+}
+
+Vec OCPQP::get_solution_action(int i) const {
+    Vec action(model.action_size());
+    s_ocp_qp_sol_get_u(i, const_cast<s_ocp_qp_sol*>(&qp_sol), action.data()); 
+    return action;
+}
+
+void OCPQP::push_down_solution_states() {
+    Vec x_buffer(model.state_size());
+    for (int i = 0; i < ocp_params.N - 1; i++) {
+        s_ocp_qp_sol_get_x(i+1, const_cast<s_ocp_qp_sol*>(&qp_sol), x_buffer.data()); 
+        s_ocp_qp_sol_set_x(i, x_buffer.data(), &qp_sol);
+    }
+}
+
+void OCPQP::push_down_solution_actions() {
+    Vec u_buffer(model.action_size());
+    for (int i = 0; i < ocp_params.N - 1; i++) {
+        s_ocp_qp_sol_get_u(i+1, const_cast<s_ocp_qp_sol*>(&qp_sol), u_buffer.data()); 
+        s_ocp_qp_sol_set_u(i, u_buffer.data(), &qp_sol);
+    }
 }

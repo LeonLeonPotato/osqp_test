@@ -95,7 +95,7 @@ public:
     /**
      * @brief Get the state constraints
      * 
-     * @return const std::vector<Constraint>& constant reference to the list of state constraints at every stage
+     * @return const std::vector<Constraint>& constant reference to the list of state constraints at every timestep
      * @see @ref mpclib::Constraint
      */
     virtual const std::vector<Constraint>& state_constraints() const { return state_constraints_; }
@@ -103,7 +103,7 @@ public:
     /**
      * @brief Get the action constraints
      * 
-     * @return const std::vector<Constraint>& - constant reference to the list of action constraints at every stage
+     * @return const std::vector<Constraint>& - constant reference to the list of action constraints at every timestep
      * @see @ref mpclib::Constraint
      */
     virtual const std::vector<Constraint>& action_constraints() const { return action_constraints_; }
@@ -111,7 +111,7 @@ public:
     /**
      * @brief Get the general constraints
      * 
-     * @return const std::vector<Constraint>& - constant reference to the list of general constraints at every stage
+     * @return const std::vector<Constraint>& - constant reference to the list of general constraints at every timestep
      * @see @ref mpclib::Constraint
      */
     virtual const std::vector<Constraint>& general_constraints() const { return general_constraints_; }
@@ -122,7 +122,7 @@ public:
      * @details 
      * The general state constraints matrix is a matrix of dimensions \f$ [\mathrm{Number\,of\,general\,constraints}, \mathrm{state\,size}] \f$.
      * Each row of the matrix corresponds to a general constraint, and each column corresponds to a state variable.
-     * In HPIPM, this matrix is multiplied by the state vector at every stage.
+     * In HPIPM, this matrix is multiplied by the state vector at every timestep.
      *
      * @return `const Mat&` - constant reference to the general state constraints matrix
      */
@@ -134,16 +134,16 @@ public:
      * @details 
      * The general action constraints matrix is a matrix of dimensions \f$ [\mathrm{Number\,of\,general\,constraints}, \mathrm{action\,size}] \f$.
      * Each row of the matrix corresponds to a general constraint, and each column corresponds to an action variable.
-     * In HPIPM, this matrix is multiplied by the action vector at every stage.
+     * In HPIPM, this matrix is multiplied by the action vector at every timestep.
      *
      * @return `const Mat&` - constant reference to the general action constraints matrix
      */
     virtual const Mat& general_constraints_action_matrix() const { return general_action_matrix; }
 
 protected:
-    std::vector<Constraint> state_constraints_; ///< List of state constraints at every stage
-    std::vector<Constraint> action_constraints_; ///< List of action constraints at every stage
-    std::vector<Constraint> general_constraints_; ///< List of general constraints at every stage
+    std::vector<Constraint> state_constraints_; ///< List of state constraints at every timestep
+    std::vector<Constraint> action_constraints_; ///< List of action constraints at every timestep
+    std::vector<Constraint> general_constraints_; ///< List of general constraints at every timestep
 
     Mat general_state_matrix; ///< General state constraint matrix, of dimensions \f$ [\mathrm{Number\,of\,general\,constraints}, \mathrm{state\,size}] \f$
     Mat general_action_matrix; ///< General action constraint matrix, of dimensions \f$ [\mathrm{Number\,of\,general\,constraints}, \mathrm{action\,size}] \f$
