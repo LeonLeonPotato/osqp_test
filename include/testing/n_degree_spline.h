@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <queue>
+#include <stack>
 
 #include "Eigen/Sparse" // IWYU pragma: keep
 
@@ -35,21 +37,46 @@ struct Condition {
     }
 };
 
+struct ProfileParams {
+    float max_speed, max_accel, min_speed;
+    float track_width;
+
+    float dt;
+};
+
 struct ProfilePoint {
+    struct ConstructionPoint {
+        float speed, distance;
+    }; ///< Partial profile point for construction of profile, less memory usage
+    
     Eigen::Vector2f pos; ///< position given path parameter
     Eigen::Vector2f deriv1st; ///< first derivative of position w.r.t path parameter
     Eigen::Vector2f deriv2nd; ///< second derivative of position w.r.t path parameter
     
     float distance; ///< Arc length from the start of the path to this point
+    float speed; ///< Theoretical speed (w.r.t. real world time) at this point
+    float accel; ///< Theoretical acceleration (w.r.t. real world time) at this point
+
     float path_param; ///< The path parameter at this point
     float real_time; ///< Theoretical real world time it took to get to this point
+
+    Eigen::Vector2f get_track_speeds(const ProfileParams& params) const {
+        float norm = 1.0f / (deriv1st.squaredNorm() * deriv1st.norm() + 1e-6f);
+        float scalar_denom = deriv1st.cross(deriv2nd) * norm * params.track_width * 0.5f;
+        float left = speed * (1.0f - scalar_denom);
+        float right = speed * (1.0f + scalar_denom);
+        return {left, right};
+    }
+
+    auto operator<(const float& other) const { return real_time < other; }
 };
+
 
 template <int N>
 class NthDegreeSpline {
     private:
         std::vector<Eigen::Vector2f> points;
-        std::vector<float> lengths;
+        std::vector<std::pair<float, float>> lengths;
         std::vector<ProfilePoint> profile;
 
         static std::vector<float> zerodiffs;
@@ -71,6 +98,12 @@ class NthDegreeSpline {
         NthDegreeSpline(int n) { segments.resize(n); ensure(N);}
         NthDegreeSpline(const std::vector<Eigen::Vector2f>& verts) { points = verts; ensure(N); }
 
+        int maxt() const { return points.size() - 1; }
+        float length(float t) const;
+        float path_parametrize(float s) const;
+        void profile_path(const ProfileParams& params);
+        const std::vector<ProfilePoint>& get_profile() const { return profile; }
+
         void solve_coeffs(
             const std::vector<Condition>& ics, 
             const std::vector<Condition>& bcs);
@@ -85,8 +118,6 @@ class NthDegreeSpline {
 
         std::string debug_out(void) const;
         std::string debug_out_precise(int precision = 4) const;
-
-        int maxt() const { return points.size() - 1; }
 
         template <typename... Args>
         auto operator()(Args... args) -> decltype(compute(args...)) const { return compute(args...); }
@@ -368,6 +399,22 @@ void NthDegreeSpline<N>::solve_coeffs(const std::vector<Condition>& ics,
 
     solve_spline(0, ics, bcs);
     solve_spline(1, ics, bcs);
+
+    int num_lengths = 32;
+    lengths.resize(segments.size() * num_lengths + 1);
+    lengths[0] = {0, 0};
+
+    for (int i = 0; i < segments.size(); i++) {
+        for (int j = 0; j < num_lengths; j++) {
+            float t1 = (float) j / num_lengths;
+            float t2 = (float) (j + 1) / num_lengths;
+            int li = num_lengths * i + j;
+            lengths[li+1] = {
+                lengths[li].first + segments[i].length(t1, t2), 
+                i + t2
+            };
+        }
+    }
 }
 
 template <int N>
@@ -386,6 +433,165 @@ __DEFINE_FORWARDER(normal, Eigen::Vector2f)
 __DEFINE_FORWARDER(angle, float)
 __DEFINE_FORWARDER(angular_velocity, float)
 __DEFINE_FORWARDER(curvature, float)
+
+template <int N>
+float NthDegreeSpline<N>::length(float t) const {
+    if (t <= 0) return 0.0f;
+    if (t >= maxt()) return lengths.back().first;
+
+    int li = std::lower_bound(lengths.begin(), lengths.end(), t, [](const auto& a, const auto& b) { return a.second < b; }) - lengths.begin() - 1;
+    int i = i_helper(t);
+    float t0 = lengths[li].second; i_helper(t0);
+    return lengths[li].first + segments[i].length(t0, t);
+}
+
+template <int N>
+float NthDegreeSpline<N>::path_parametrize(float s) const {
+    if (s <= 0) return 0.0f;
+    if (s >= lengths.back().first) return lengths.back().second;
+
+    int i = std::lower_bound(lengths.begin(), lengths.end(), s, [](const auto& a, const auto& b) { return a.first < b; }) - lengths.begin();
+    float slope = (lengths[i-1].second - lengths[i].second) / (lengths[i-1].first - lengths[i].first); // approx du / ds
+    float guess = slope * (s - lengths[i-1].first) + lengths[i-1].second;
+    return guess;
+}
+template <int N>
+void NthDegreeSpline<N>::profile_path(const ProfileParams& params) {
+    constexpr size_t initial_size = 2048;
+    using ConstructionPoint = ProfilePoint::ConstructionPoint;
+
+    std::queue<ConstructionPoint> forward_pass;
+    forward_pass.emplace(params.min_speed, 0.0f);
+
+    Eigen::Vector2f deriv1;
+    Eigen::Vector2f deriv2;
+    float curve = curvature(0.0f);
+    float scalar;
+    float dkdt;
+
+    auto predict = [&](float pp) {
+        deriv1 = compute(pp, 1);
+        deriv2 = compute(pp, 2);
+        float inv_norm = 1.0f / (deriv1.squaredNorm() * deriv1.norm() + 1e-6f);
+        float new_curve = deriv1.cross(deriv2) * inv_norm;
+        dkdt = 2.0f * (new_curve < 0 ? 1 : -1) * ((new_curve - curve) / params.dt); // Why does *2 work better i dont know
+        curve = new_curve;
+        scalar = 1.0f / (1.0f + fabsf(curve * params.track_width * 0.5f));
+    };
+
+    predict(0.0f);
+    dkdt = 0.0f;
+
+    while (forward_pass.back().distance < length(maxt())) {
+        const auto& last = forward_pass.back();
+
+        float accel = (params.max_accel - last.speed * dkdt * params.track_width * 0.5f) * scalar;
+
+        float new_speed = std::clamp(
+            last.speed + accel * params.dt,
+            params.min_speed, fmaxf(params.min_speed, params.max_speed * scalar)
+        );
+        float delta_dist = fminf(0.5f * (new_speed + last.speed) * params.dt, length(maxt()) - last.distance);
+        float new_param = path_parametrize(last.distance + delta_dist);
+
+        forward_pass.emplace(
+            new_speed, // speed
+            last.distance + delta_dist // distance
+        );
+
+        float predicted_path_param = path_parametrize(last.distance + delta_dist + new_speed * params.dt);
+        predict(predicted_path_param);
+    }
+
+    curve = curvature(maxt());
+    predict(maxt());
+    dkdt = 0.0f;
+
+    std::stack<ConstructionPoint> backward_pass;
+    backward_pass.emplace(0.0f, length(maxt()));
+
+    while (backward_pass.top().distance > 0.0f) {
+        const auto& last = backward_pass.top();
+
+        float accel = (params.max_accel - last.speed * dkdt * params.track_width * 0.5f) * scalar;
+
+        float new_speed = std::clamp(
+            last.speed + accel * params.dt,
+            params.min_speed, fmaxf(params.min_speed, params.max_speed * scalar)
+        );
+        float delta_dist = fminf(0.5f * (new_speed + last.speed) * params.dt, last.distance);
+        float new_param = path_parametrize(last.distance - delta_dist);
+
+        backward_pass.emplace(
+            new_speed, // speed
+            last.distance - delta_dist // distance
+        );
+
+        float predicted_path_param = path_parametrize(last.distance - delta_dist - new_speed * params.dt);
+        predict(predicted_path_param);
+    }
+
+    forward_pass.back().distance = length(maxt());
+    backward_pass.top().distance = 0.0f;
+
+    ConstructionPoint lf = forward_pass.front();
+    ConstructionPoint lb = backward_pass.top();
+    profile.clear();
+    profile.reserve(initial_size);
+
+    profile.emplace_back(
+        compute(0, 0), // position
+        compute(0, 1), // first derivative
+        compute(0, 2), // second derivative
+        0.0f, // distance
+        params.min_speed, // speed
+        params.max_accel, // accel
+        0.0f, // path param
+        0.0f // real time
+    );
+
+    while (profile.back().distance < length(maxt()) - 0.5f) {
+        const auto& last = profile.back();
+        float cur_distance = last.distance + params.dt * last.speed + 0.5f * last.accel * params.dt * params.dt;
+        
+        while ((forward_pass.size() > 1) && forward_pass.front().distance <= cur_distance) {
+            lf = forward_pass.front(); forward_pass.pop();
+        }
+        while ((backward_pass.size() > 1) && backward_pass.top().distance <= cur_distance) {
+            lb = backward_pass.top(); backward_pass.pop();
+        }
+
+        const auto& cf = forward_pass.front();
+        const auto& cb = backward_pass.top();
+        float slope_cf = (lf.speed * lf.speed - cf.speed * cf.speed) / (lf.distance - cf.distance);
+        float slope_cb = (lb.speed * lb.speed - cb.speed * cb.speed) / (lb.distance - cb.distance);
+        float cf_calc = slope_cf * (cur_distance - lf.distance) + lf.speed * lf.speed;
+        float cb_calc = slope_cb * (cur_distance - lb.distance) + lb.speed * lb.speed;
+
+        float speed = sqrtf(fmaxf(0, fminf(cf_calc, cb_calc)));
+        float accel = 0.5f * (1.0f / speed);
+        if (cf_calc < cb_calc) {
+            accel *= slope_cf;
+        } else {
+            accel *= slope_cb;
+        }
+
+        float new_param = path_parametrize(cur_distance);
+
+        profile.emplace_back(
+            compute(new_param, 0), // position
+            compute(new_param, 1), // first derivative
+            compute(new_param, 2), // second derivative
+            cur_distance, // distance
+            speed, // speed
+            accel, // accel
+            new_param, // path param
+            last.real_time + params.dt // real time
+        );
+    }
+
+    profile.back().distance = length(maxt());
+}
 
 template<int N>
 std::string NthDegreeSpline<N>::debug_out(void) const {

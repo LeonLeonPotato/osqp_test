@@ -51,3 +51,7 @@ SimulatedLocalizer::SimulatedLocalizer(float x, float y, float theta, float vl, 
         }
     }, this, TASK_PRIORITY_DEFAULT, TASK_STACK_DEPTH_DEFAULT, "SimulatedLocalizer");
 }
+
+SimulatedLocalizer::~SimulatedLocalizer(void) {
+    pros::c::task_delete(input_task);
+}

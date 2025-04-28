@@ -20,6 +20,10 @@ SimulatedActuator::SimulatedActuator(void) {
     }, this, TASK_PRIORITY_DEFAULT, TASK_STACK_DEPTH_DEFAULT, "SimulatedActuator");
 }
 
+SimulatedActuator::~SimulatedActuator(void) {
+    pros::c::task_delete(output_task);
+}
+
 void SimulatedActuator::volt_left(float left) {
     left = std::clamp(left, -12.0f, 12.0f);
     *this->last_set_left_volt.lock() = left;

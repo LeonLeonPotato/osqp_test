@@ -18,7 +18,7 @@ class Localization {
             return state;
         }
         std::string to_string() {
-            char buffer[4096] = {0};
+            char buffer[256] = {0};
             sprintf(buffer, "Localization {x = %f, y= %f, θ = %f, vl = %f, vr = %f}", x(), y(), theta(), vl(), vr());
             return std::string(buffer);
         }
@@ -32,6 +32,7 @@ class SimulatedLocalizer : public Localization {
     public:
         SimulatedLocalizer(float x, float y, float theta, float vl = 0, float vr = 0);
         SimulatedLocalizer(void) : mpclib::SimulatedLocalizer(0, 0, 0) {}
+        ~SimulatedLocalizer(void);
 
         float x() override { return *x_.lock(); }
         float y() override { return *y_.lock(); }

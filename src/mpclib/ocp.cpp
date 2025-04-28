@@ -238,7 +238,6 @@ void OCPQP::setup_constraints() {
     if (model.state_constraints().size() > 0) {
         int state_bound_index[model.state_constraints().size()];
         create_index_from_constraints(state_bound_index, model.state_constraints().size(), model.state_constraints());
-        std::cout << "State bound index: "; print_arr(state_bound_index, model.state_constraints().size());
 
         float lower_bound[model.state_constraints().size()];
         float upper_bound[model.state_constraints().size()];
@@ -256,7 +255,6 @@ void OCPQP::setup_constraints() {
     if (model.action_constraints().size() > 0) {
         int action_bound_index[model.action_constraints().size()];
         create_index_from_constraints(action_bound_index, model.action_constraints().size(), model.action_constraints());
-        std::cout << "Action bound index: "; print_arr(action_bound_index, model.action_constraints().size());
 
         float lower_bound[model.action_constraints().size()];
         float upper_bound[model.action_constraints().size()];
@@ -274,7 +272,6 @@ void OCPQP::setup_constraints() {
     if (model.general_constraints().size()) {
         float general_bound_mask[model.general_constraints().size()];
         create_mask_from_constraints(general_bound_mask, model.general_constraints().size(), model.general_constraints());
-        std::cout << "General bound mask: "; print_arr(general_bound_mask, model.general_constraints().size());
 
         float lower_bound[model.general_constraints().size()];
         float upper_bound[model.general_constraints().size()];
@@ -302,9 +299,6 @@ void OCPQP::setup_constraints() {
     s_ocp_qp_set_ubx_mask(0, initial_state_constraint_mask, &qp);
     s_ocp_qp_set_idxbx(0, initial_state_constraint_index, &qp);
     s_ocp_qp_set_idxbxe(0, initial_state_constraint_index, &qp);
-
-    std::cout << "x0 mask: "; print_arr(initial_state_constraint_mask, model.state_size());
-    std::cout << "x0 index: "; print_arr(initial_state_constraint_index, model.state_size());
 }
 
 void OCPQP::setup_costs() {
@@ -420,17 +414,17 @@ void OCPQP::set_target_state(const std::vector<Vec>& x_desired) {
     Vec q_cost(model.state_size());
 
     // Initial cost
-    q_cost << -ocp_params.Q1 * x_desired[0];
+    q_cost = -ocp_params.Q1 * x_desired[0];
     s_ocp_qp_set_q(1, q_cost.data(), &qp);
 
     // Intermediate costs
     for (int i = 2; i < ocp_params.N; i++) {
-        q_cost << -ocp_params.Q * x_desired[i-1];
+        q_cost = -ocp_params.Q * x_desired[i-1];
         s_ocp_qp_set_q(i, q_cost.data(), &qp);
     }
 
     // Final cost
-    q_cost << -ocp_params.Qf * x_desired[ocp_params.N-1];
+    q_cost = -ocp_params.Qf * x_desired[ocp_params.N-1];
     s_ocp_qp_set_q(ocp_params.N, q_cost.data(), &qp);
 }
 

@@ -5,6 +5,12 @@
 #include <iostream>
 
 namespace pathing {
+static float leggauss5_nodes[5] =  {-0.906179845938664, -0.5384693101056831, 0.0, 0.5384693101056831, 0.906179845938664};
+static float leggauss5_weights[5] = {0.23692688505618942, 0.4786286704993662, 0.568888888888889, 0.4786286704993662, 0.23692688505618942};
+
+static float leggauss20_nodes[20] = {-0.9931285991850949, -0.9639719272779138, -0.9122344282513258, -0.8391169718222188, -0.7463319064601508, -0.636053680726515, -0.5108670019508271, -0.37370608871541955, -0.2277858511416451, -0.07652652113349734, 0.07652652113349734, 0.2277858511416451, 0.37370608871541955, 0.5108670019508271, 0.636053680726515, 0.7463319064601508, 0.8391169718222188, 0.9122344282513258, 0.9639719272779138, 0.9931285991850949};
+static float leggauss20_weights[20] = {0.017614007139153273, 0.04060142980038622, 0.06267204833410944, 0.08327674157670467, 0.10193011981724026, 0.11819453196151825, 0.13168863844917653, 0.14209610931838187, 0.14917298647260366, 0.15275338713072578, 0.15275338713072578, 0.14917298647260366, 0.14209610931838187, 0.13168863844917653, 0.11819453196151825, 0.10193011981724026, 0.08327674157670467, 0.06267204833410944, 0.04060142980038622, 0.017614007139153273};
+
 template <int N>
 class Polynomial {
     private:
@@ -45,9 +51,11 @@ class Polynomial2D {
         Polynomial2D(const Polynomial<N>& x_poly, const Polynomial<N>& y_poly) : x_poly(x_poly), y_poly(y_poly) {}
 
         template <typename T, typename R>
+        requires (!std::is_integral<R>::value)
         void compute(const T& t, R res, int deriv = 0) const;
 
         template <typename T>
+        requires (!std::is_integral<T>::value)
         Eigen::MatrixX2f compute(const T& t, int deriv = 0) const;
 
         template <typename V>
@@ -59,6 +67,9 @@ class Polynomial2D {
         float angle(float t) const;
         float angular_velocity(float t) const;
         float curvature(float t) const;
+
+        float length(float t) const;
+        float length(float t0, float t1) const;
 
         template <typename... Args>
         auto operator()(Args... args) -> decltype(compute(args...)) const { return compute(args...); }
@@ -154,6 +165,7 @@ inline std::string Polynomial<N>::debug_out(int precision) const {
 
 template <int N>
 template <typename T, typename R>
+requires (!std::is_integral<R>::value)
 inline void Polynomial2D<N>::compute(const T& t, R res, int deriv) const {
     x_poly.compute(t, res.col(0), deriv);
     y_poly.compute(t, res.col(1), deriv);
@@ -161,6 +173,7 @@ inline void Polynomial2D<N>::compute(const T& t, R res, int deriv) const {
 
 template <int N>
 template <typename T>
+requires (!std::is_integral<T>::value)
 inline Eigen::MatrixX2f Polynomial2D<N>::compute(const T& t, int deriv) const {
     Eigen::MatrixX2f x(t.size(), 2);
     compute(t, x, deriv);
@@ -212,5 +225,29 @@ inline float Polynomial2D<N>::curvature(float t) const {
     const Eigen::Vector2f d2 = compute(t, 2);
     return (d1(0) * d2(1) - d1(1) * d2(0)) / ((d1(0) * d1(0) + d1(1) * d1(1)) * 
         sqrtf(d1(0) * d1(0) + d1(1) * d1(1)) + 1e-6);
+}
+
+template <int N>
+inline float Polynomial2D<N>::length(float t) const {
+    if (t == 0) return 0;
+
+    float length = 0.0f;
+    for (int i = 0; i < 5; i++) {
+        float x = t * (leggauss5_nodes[i] * 0.5f + 0.5f);
+        length += (t * 0.5f) * compute(x, 1).norm() * leggauss5_weights[i];
+    }
+
+    return length;
+}
+
+template <int N>
+inline float Polynomial2D<N>::length(float t0, float t1) const {
+    float length = 0.0f;
+    for (int i = 0; i < 5; i++) {
+        float x = t0 + (t1 - t0) * (leggauss5_nodes[i] * 0.5f + 0.5f);
+        length += ((t1 - t0) * 0.5f) * compute(x, 1).norm() * leggauss5_weights[i];
+    }
+
+    return length;
 }
 }

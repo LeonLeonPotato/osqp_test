@@ -22,6 +22,7 @@ class SimulatedActuator : public Actuator {
 
     public:
         SimulatedActuator(void);
+        ~SimulatedActuator(void);
 
         void volt_left(float voltage);
         void volt_right(float voltage);
