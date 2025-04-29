@@ -71,6 +71,13 @@ public:
     virtual constexpr int action_size() const = 0;
 
     /**
+     * @brief Get the model parameters
+     * 
+     * @return `const BaseParams&` - constant reference to the model parameters
+     */
+    virtual const BaseParams& get_params() const = 0;
+
+    /**
      * @brief Predict the next state using the model dynamics, with automatic differentiation support
      * 
      * @details
@@ -78,9 +85,10 @@ public:
      * 
      * @param x Input state
      * @param u Input action
+     * @param dt_override Override the time step for this prediction. If negative, the default time step from the model parameters is used.
      * @return ADVec - Predicted next state with the model dynamics given the input and action
      */
-    virtual ADVec autodiff(const ADVec& x, const ADVec& u) const = 0;
+    virtual ADVec autodiff(const ADVec& x, const ADVec& u, double dt_override) const = 0;
 
     /**
      * @brief Predict the next state using the model dynamics

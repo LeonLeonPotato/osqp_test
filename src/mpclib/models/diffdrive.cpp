@@ -12,13 +12,14 @@ DifferentialDriveModel::DifferentialDriveModel(const Params& params) : params_(p
     resync_from_params();
 }
 
-static constexpr double ratio = 0.8f;
+static constexpr double ratio = 0.5f;
 
 // TODO: implement continuous acceleration model
-ADVec DifferentialDriveModel::autodiff(const ADVec& x, const ADVec& u) const {
+ADVec DifferentialDriveModel::autodiff(const ADVec& x, const ADVec& u, double dt_override) const {
     ADVec xdot(5);
-    auto dvl = u[0] * params_.dt;
-    auto dvr = u[1] * params_.dt;
+    auto dt = dt_override < 0 ? params_.dt : dt_override;
+    auto dvl = u[0] * dt;
+    auto dvr = u[1] * dt;
     auto vl = x[3] + ratio * dvl;
     auto vr = x[4] + ratio * dvr;
     auto ds = 0.5 * (vl + vr) * params_.dt;

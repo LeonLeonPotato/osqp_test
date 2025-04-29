@@ -124,10 +124,11 @@ struct OCPQP {
      * 
      * @param x State vector to linearize around.
      * @param u Action vector to linearize around.
+     * @param first_stage_dt_override Override the time step for the first stage. If negative, the default time step from the model parameters is used.
      * 
      * @see @ref mpclib::Model::autodiff
      */
-    void relinearize(const Vec& x, const Vec& u);
+    void relinearize(const Vec& x, const Vec& u, float first_stage_dt_override = -1.0f);
 
     /**
      * @brief Relinearize the model dynamics by evolving a state from a sequence of actions
@@ -141,11 +142,12 @@ struct OCPQP {
      * 
      * @param x the initial state to evolve from.
      * @param u list of actions to evolve the state with.
+     * @param first_stage_dt_override Override the time step for the first stage. If negative, the default time step from the model parameters is used.
      *
      * @see @ref mpclib::Model::autodiff
      * @note If the size of `u` is less than `N`, the last state & action will be used to fill the rest of the dynamics matricies.
      */
-    void relinearize(Vec x, const std::vector<Vec>& u);
+    void relinearize(Vec x, const std::vector<Vec>& u, float first_stage_dt_override = -1.0f);
 
     /**
      * @brief Relinearize the model dynamics from a sequence of states and actions
@@ -157,12 +159,13 @@ struct OCPQP {
      * 
      * @param x States to linearize around at each timestep.
      * @param u Actions to linearize around at each timestep.
+     * @param first_stage_dt_override Override the time step for the first stage. If negative, the default time step from the model parameters is used.
      *
      * @see @ref mpclib::Model::autodiff
      * @note If the size of `u` or `x` is less than `N`, the last state & action will be used to fill the rest of the dynamics matricies.
      * Additionally, if the size of `x` differs from `u`, the smaller of the two will be used.
      */
-    void relinearize(const std::vector<Vec>& x, const std::vector<Vec>& u);
+    void relinearize(const std::vector<Vec>& x, const std::vector<Vec>& u, float first_stage_dt_override = -1.0f);
 
     /**
      * @brief Set a single target state across all N timesteps
