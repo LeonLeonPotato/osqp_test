@@ -18,11 +18,12 @@ SimulatedLocalizer* testing::localizer;
 
 void opcontrol() {
 	printf("[RESET]\n");
-	pros::delay(200);
+	// pros::delay(200);
 
-	testing::actuator = new mpclib::SimulatedActuator();
-	testing::localizer = new mpclib::SimulatedLocalizer();
+	// testing::actuator = new mpclib::SimulatedActuator();
+	// testing::localizer = new mpclib::SimulatedLocalizer();
 
-	testing::simulation();
+	// testing::simulation();
+	testing::driver();
 	// testing::spline();
 }
