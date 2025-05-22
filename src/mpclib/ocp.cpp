@@ -125,8 +125,8 @@ static void print_arr(T* arr, size_t size) {
  * @param u action operating vector to linearize around
  * @return auto 
  */
-static auto autodiff_model_wrapper(const Model& model, const ADVec& x, const ADVec& u) {
-    return model.autodiff(x, u);
+static auto autodiff_model_wrapper(const Model& model, const ADVec& x, const ADVec& u, double dt_override) {
+    return model.autodiff(x, u, dt_override);
 }
 
 OCPQP::OCPQP(const Model& model, const OCPParams& ocp_params)
@@ -331,31 +331,47 @@ void OCPQP::set_initial_state(const Vec& x) {
     s_ocp_qp_set_ubx(0, const_cast<float*>(x.data()), &qp);
 }
 
-void OCPQP::relinearize(const Vec& x, const Vec& u) {
+void OCPQP::relinearize(const Vec& x, const Vec& u, float first_stage_dt_override) {
+    float dt = first_stage_dt_override < 0.0f ? model.get_params().dt : first_stage_dt_override;
+    // First, we linearize with dt override
     ADVec fout;
     ADVec ad_x = x.cast<autodiff::real>();
     ADVec ad_u = u.cast<autodiff::real>();
-    Mat jx = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_x), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
-    Mat ju = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_u), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
+    Mat jx = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_x), autodiff::at(model, ad_x, ad_u, (double) dt), fout).cast<float>();
+    Mat ju = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_u), autodiff::at(model, ad_x, ad_u, (double) dt), fout).cast<float>();
     Vec c = fout.cast<float>() - (jx * x) - (ju * u);
 
-    // [0, N-1] because the last state (N) does not need to transition to the next (N+1) (It doesnt exist)
-    for (int i = 0; i < ocp_params.N; i++) {
+    std::cout << dt << std::endl;
+
+    s_ocp_qp_set_A(0, jx.data(), &qp);
+    s_ocp_qp_set_B(0, ju.data(), &qp);
+    s_ocp_qp_set_b(0, c.data(), &qp);
+
+    // Then, we linearize with the default dt
+    ad_x = x.cast<autodiff::real>();
+    ad_u = u.cast<autodiff::real>();
+    jx = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_x), autodiff::at(model, ad_x, ad_u, model.get_params().dt), fout).cast<float>();
+    ju = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_u), autodiff::at(model, ad_x, ad_u, model.get_params().dt), fout).cast<float>();
+    c = fout.cast<float>() - (jx * x) - (ju * u);
+
+    // [1, N-1] because the last state (N) does not need to transition to the next (N+1) (It doesnt exist)
+    for (int i = 1; i < ocp_params.N; i++) {
         s_ocp_qp_set_A(i, jx.data(), &qp);
         s_ocp_qp_set_B(i, ju.data(), &qp);
         s_ocp_qp_set_b(i, c.data(), &qp);
     }
 }
 
-void OCPQP::relinearize(Vec x, const std::vector<Vec>& u) {
+void OCPQP::relinearize(Vec x, const std::vector<Vec>& u, float first_stage_dt_override) {
     ADVec ad_x = x.cast<autodiff::real>();
     Mat jx, ju;
     Vec c;
     for (int i = 0; i < u.size(); i++) {
         ADVec fout;
         ADVec ad_u = u[i].cast<autodiff::real>();
-        jx = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_x), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
-        ju = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_u), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
+        double dt = (first_stage_dt_override > 0.0f && i == 0) ? first_stage_dt_override : model.get_params().dt;
+        jx = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_x), autodiff::at(model, ad_x, ad_u, dt), fout).cast<float>();
+        ju = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_u), autodiff::at(model, ad_x, ad_u, dt), fout).cast<float>();
         c = fout.cast<float>() - (jx * x) - (ju * u[i]);
 
         s_ocp_qp_set_A(i, jx.data(), &qp);
@@ -372,7 +388,7 @@ void OCPQP::relinearize(Vec x, const std::vector<Vec>& u) {
     }
 }
 
-void OCPQP::relinearize(const std::vector<Vec>& x, const std::vector<Vec>& u) {
+void OCPQP::relinearize(const std::vector<Vec>& x, const std::vector<Vec>& u, float first_stage_dt_override) {
     Mat jx, ju;
     Vec c;
 
@@ -380,8 +396,9 @@ void OCPQP::relinearize(const std::vector<Vec>& x, const std::vector<Vec>& u) {
         ADVec fout;
         ADVec ad_x = x[i].cast<autodiff::real>();
         ADVec ad_u = u[i].cast<autodiff::real>();
-        jx = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_x), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
-        ju = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_u), autodiff::at(model, ad_x, ad_u), fout).cast<float>();
+        double dt = (first_stage_dt_override > 0.0f && i == 0) ? first_stage_dt_override : model.get_params().dt;
+        jx = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_x), autodiff::at(model, ad_x, ad_u, dt), fout).cast<float>();
+        ju = autodiff::jacobian(autodiff_model_wrapper, autodiff::wrt(ad_u), autodiff::at(model, ad_x, ad_u, dt), fout).cast<float>();
         c = fout.cast<float>() - (jx * x[i]) - (ju * u[i]);
 
         s_ocp_qp_set_A(i, jx.data(), &qp);

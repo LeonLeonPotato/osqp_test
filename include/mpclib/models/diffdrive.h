@@ -57,7 +57,7 @@ public:
     DifferentialDriveModel(const Params& params);
 
     /// @copydoc mpclib::Model::autodiff
-    ADVec autodiff(const ADVec& x, const ADVec& u) const override;
+    ADVec autodiff(const ADVec& x, const ADVec& u, double dt_override = -1) const override;
     /// @copydoc mpclib::Model::infer
     Vec infer(const Vec& x, const Vec& u, float dt_override = -1) const override;
 
@@ -68,6 +68,9 @@ public:
      * @see mpclib::DifferentialDriveModel::Params 
      */
     const Params& params() const { return params_; }
+
+    /// @copydoc mpclib::Model::get_params()
+    const BaseParams& get_params() const override { return params_; }
 
     /**
      * @brief Set the parameters of the model.
